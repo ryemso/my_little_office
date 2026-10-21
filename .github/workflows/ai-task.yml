@@ -1,0 +1,66 @@
+name: AI office task
+on:
+  workflow_dispatch:
+    inputs:
+      role:
+        description: '담당 직무'
+        required: true
+        type: choice
+        options: [lead, plan, dev, design, market, data]
+      prompt:
+        description: '업무 지시 (5~5000자, 비밀·개인정보 금지)'
+        required: true
+        type: string
+      publish_consent:
+        description: '지시와 AI 결과를 공개 저장소·Pages에 공개하는 데 동의'
+        type: boolean
+        required: true
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: office-ai-task
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    permissions:
+      contents: write
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      OPENAI_MODEL: ${{ vars.OPENAI_MODEL }}
+      TASK_ROLE: ${{ inputs.role }}
+      TASK_PROMPT: ${{ inputs.prompt }}
+      PUBLISH_CONSENT: ${{ inputs.publish_consent }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Validate and record start
+        id: begin
+        run: python3 scripts/run_task.py begin
+      - name: Save running status
+        run: |
+          git config user.name 'office-bot'
+          git config user.email 'office-bot@users.noreply.github.com'
+          git add site/data/tasks.json
+          git commit -m "Record AI office task start"
+          git pull --rebase origin main
+          git push origin HEAD:main
+      - name: Execute one bounded AI request
+        id: ai
+        run: python3 scripts/run_task.py run
+      - name: Save result or failure
+        if: always() && steps.begin.outcome == 'success'
+        run: |
+          git add site/data/tasks.json
+          git diff --cached --quiet || git commit -m "Record AI office task result"
+          git pull --rebase origin main
+          git push origin HEAD:main
+      - name: Preserve result artifact
+        if: always() && steps.begin.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: office-task-${{ github.run_id }}
+          path: site/data/tasks.json
