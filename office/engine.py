@@ -1,6 +1,7 @@
 """Background worker independent of Streamlit browser reruns."""
 import json
 import os
+import platform
 from pathlib import Path
 import re
 import shutil
@@ -47,8 +48,20 @@ def codex_command():
     if not executable:
         raise RuntimeError('Codex CLI가 없습니다. npm install -g @openai/codex 후 로그인하세요.')
     if Path(executable).suffix.lower() in ('.cmd', '.bat'):
-        # Avoid shell parsing of prompts or temporary paths in Windows npm shims.
-        entry = Path(executable).parent / 'node_modules/@openai/codex/bin/codex.js'
+        # Prefer the native binary: Node's second spawn can fail even when
+        # the very same installed exe runs successfully from PowerShell.
+        modules=Path(executable).parent/'node_modules'
+        package=modules/'@openai/codex'
+        architecture='arm64' if platform.machine().lower() in ('arm64','aarch64') else 'x64'
+        triple='aarch64-pc-windows-msvc' if architecture=='arm64' else 'x86_64-pc-windows-msvc'
+        relative=Path('vendor')/triple/'bin/codex.exe'
+        candidates=[package/'node_modules/@openai'/('codex-win32-'+architecture)/relative,
+                    modules/'@openai'/('codex-win32-'+architecture)/relative,
+                    package/relative]
+        for candidate in candidates:
+            if candidate.is_file():return [str(candidate)]
+        # Other npm layouts can still use the upstream wrapper.
+        entry = package/'bin/codex.js'
         node = shutil.which('node')
         if not node or not entry.is_file():
             raise RuntimeError('Windows npm Codex 설치를 확인하세요. Node.js와 npm install -g @openai/codex가 필요합니다.')

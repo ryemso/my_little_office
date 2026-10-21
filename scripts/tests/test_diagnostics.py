@@ -5,11 +5,32 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from office.engine import Worker,run_codex
+from office.engine import Worker,run_codex,codex_command
 from office.store import Store
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_windows_native_binary_with_korean_path_without_node(self):
+        with tempfile.TemporaryDirectory() as folder:
+            npm=Path(folder)/'김렴소'/'npm'
+            native=npm/'node_modules/@openai/codex/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe'
+            native.parent.mkdir(parents=True);native.write_bytes(b'fixture')
+            with patch('office.engine.shutil.which',return_value=str(npm/'codex.cmd')),patch('office.engine.platform.machine',return_value='AMD64'):
+                self.assertEqual(codex_command(),[str(native)])
+
+    def test_windows_hoisted_arm64_and_wrapper_fallback(self):
+        with tempfile.TemporaryDirectory() as folder:
+            npm=Path(folder)
+            native=npm/'node_modules/@openai/codex-win32-arm64/vendor/aarch64-pc-windows-msvc/bin/codex.exe'
+            native.parent.mkdir(parents=True);native.write_bytes(b'fixture')
+            def which(name):return str(npm/'codex.cmd') if name=='codex' else 'node'
+            with patch('office.engine.shutil.which',side_effect=which),patch('office.engine.platform.machine',return_value='ARM64'):
+                self.assertEqual(codex_command(),[str(native)])
+                native.unlink()
+                wrapper=npm/'node_modules/@openai/codex/bin/codex.js'
+                wrapper.parent.mkdir(parents=True);wrapper.write_text('// fixture')
+                self.assertEqual(codex_command(),['node',str(wrapper)])
+
     def test_worker_preserves_error_and_local_traceback_without_secret(self):
         with tempfile.TemporaryDirectory() as folder:
             store=Store(folder)
