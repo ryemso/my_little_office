@@ -7,6 +7,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from office.engine import Worker, require_login
 from office.store import Store
+from office import knowledge
 from office.sync import publish
 from office.workspaces import Workspace
 from scripts.local_office import ROLES, STATE
@@ -75,22 +76,60 @@ if st.session_state.parent_task:
     if st.button('새 업무로 전환'):
         st.session_state.parent_task = None
         st.rerun()
+with st.expander('회사 지식실 · 대표 정보와 공통 자료'):
+    st.caption('모든 직원의 초기 기반입니다. 개인 프로필과 원본은 PC에 보관하며, 업무 실행 때 Codex에 전달합니다. 기존 ChatGPT 대화가 자동 연결되지는 않습니다.')
+    with st.form('owner-profile'):
+        owner_text=st.text_area('대표의 경험·기술·업무 방식',value=knowledge.profile(store),max_chars=20000,height=220)
+        owner_import=st.file_uploader('대표 초기프로필 가져오기',type=['json'])
+        if st.form_submit_button('대표 프로필 저장'):
+            try:
+                if owner_import:knowledge.import_profile(store,owner_import.getvalue())
+                else:knowledge.save_profile(store,owner_text)
+                st.success('다음에 접수하는 업무부터 모든 직원에게 전달합니다.')
+            except (ValueError,TypeError) as error:st.error(str(error))
+    with st.form('company-sources'):
+        shared_files=st.file_uploader('회사 공통 자료',accept_multiple_files=True,max_upload_size=10)
+        shared_url=st.text_input('공통 자료 링크',placeholder='https://...')
+        if st.form_submit_button('공통 자료 등록'):
+            try:
+                for file in shared_files:knowledge.upload(store,file.name,file.getvalue(),scope='company')
+                if shared_url.strip():knowledge.link(store,shared_url.strip(),scope='company')
+                st.success('공통 자료 등록 처리 완료. 아래에서 읽기 결과를 확인하세요.')
+            except Exception as error:st.error(str(error))
+    for source in knowledge.sources(store,project_id):
+        st.caption(('읽음' if source['status']=='ready' else '읽기 실패')+' · '+source['title']+' · '+source['note'])
+        if source['text']:
+            with st.expander('미리보기 · '+source['title'][:60]):st.text(source['text'][:6000])
+available_sources=knowledge.sources(store,project_id)
+source_labels={item['id']:('✓ ' if item['status']=='ready' else '⚠ ')+item['title'] for item in available_sources}
 with st.form('new_task', clear_on_submit=False):
     role = st.selectbox('담당 직원', list(ROLES), format_func=lambda value: ROLES[value], key='selected_role')
     prompt = st.text_area('업무 지시', placeholder='예: 모바일 게임의 첫 1분 이탈을 줄일 기능을 구체적으로 설계해줘.', max_chars=5000, height=130)
+    attachments=st.file_uploader('이번 업무에 첨부할 파일',accept_multiple_files=True,max_upload_size=10)
+    urls=st.text_area('참고 링크 · 한 줄에 하나',height=70)
+    selected_sources=st.multiselect('기존 자료 선택',list(source_labels),format_func=lambda value:source_labels[value],max_selections=20)
+    st.caption('공통 자료는 자동 포함합니다. 파일당 10MB · 이미지 직접 입력은 최대 5개 · 로그인·동적 페이지는 파일로 올려주세요.')
     delegate = st.checkbox('총괄에게 지시하면 하부 직원에게 자동 배정', value=True, help='총괄 선택 시에만 적용합니다. 최대 6개 업무를 순서대로 실행하고 최종 보고합니다.')
     submitted = st.form_submit_button('업무 지시', type='primary', use_container_width=True)
 if submitted:
     try:
+        source_ids=list(selected_sources)
+        for file in attachments:source_ids.append(knowledge.upload(store,file.name,file.getvalue(),project_id))
+        cache=st.session_state.setdefault('source_link_cache',{})
+        for url in knowledge.inline_links(urls+'\n'+prompt):
+            cache_key=(project_id,url)
+            if cache_key not in cache:cache[cache_key]=knowledge.link(store,url,project_id)
+            source_ids.append(cache[cache_key])
+        source_ids=sorted(set(source_ids))
         auto_team = role == 'lead' and delegate
-        signature = (role, prompt.strip(), st.session_state.parent_task, auto_team, project_id)
+        signature = (role, prompt.strip(), st.session_state.parent_task, auto_team, project_id, tuple(source_ids))
         previous = st.session_state.get('last_submission')
         request_id = previous[1] if previous and previous[0] == signature else st.session_state.request_id
-        identifier = store.submit(role, prompt, request_id, st.session_state.parent_task, delegate=auto_team, project_id=project_id)
+        identifier = store.submit(role, prompt, request_id, st.session_state.parent_task, delegate=auto_team, project_id=project_id,source_ids=source_ids)
         st.session_state.last_submission = (signature, identifier)
         st.session_state.request_id = str(uuid.uuid4())
         st.success('PC에 업무를 접수했습니다. 직원이 순서대로 처리합니다.')
-    except ValueError as error:
+    except Exception as error:
         st.error(str(error))
 
 if st.button('같은 내용으로 새 업무 준비'):
@@ -115,6 +154,9 @@ def task_board():
         with st.expander(f"{ROLES[task['role']]} · {task_label(task)} · {task['prompt'][:48]}", expanded=task['status'] in ('running', 'delegating', 'review', 'failed', 'blocked', 'quota_wait', 'awaiting_approval')):
             st.text(task['prompt'])
             st.caption('업무 ID: ' + task['id'])
+            context=json.loads(task.get('context_json') or '{}')
+            if context.get('profile'):st.caption('접수 당시 대표 프로필 전달됨')
+            for source in context.get('sources',[]):st.caption('참고 자료: '+source['title']+' · '+source['status']+' · '+source['note'])
             if task['kind'] == 'plan':
                 steps = store.children(task['id'])
                 if steps:

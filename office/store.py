@@ -24,13 +24,15 @@ class Store:
                     usage TEXT NOT NULL DEFAULT '{}');
             ''')
             columns = {row['name'] for row in con.execute('PRAGMA table_info(tasks)')}
-            for name, definition in [('kind', "TEXT NOT NULL DEFAULT 'single'"), ('root_id', 'TEXT'), ('ordinal', 'INTEGER NOT NULL DEFAULT 0'), ('plan_json', "TEXT NOT NULL DEFAULT ''"), ('project_id', 'TEXT'), ('action_json', "TEXT NOT NULL DEFAULT ''"), ('evidence_json', "TEXT NOT NULL DEFAULT '{}'"), ('approval_hash', "TEXT NOT NULL DEFAULT ''")]:
+            for name, definition in [('kind', "TEXT NOT NULL DEFAULT 'single'"), ('root_id', 'TEXT'), ('ordinal', 'INTEGER NOT NULL DEFAULT 0'), ('plan_json', "TEXT NOT NULL DEFAULT ''"), ('project_id', 'TEXT'), ('action_json', "TEXT NOT NULL DEFAULT ''"), ('evidence_json', "TEXT NOT NULL DEFAULT '{}'"), ('approval_hash', "TEXT NOT NULL DEFAULT ''"), ('context_json', "TEXT NOT NULL DEFAULT '{}'")]:
                 if name not in columns:
                     con.execute(f'ALTER TABLE tasks ADD COLUMN {name} {definition}')
             con.execute('CREATE INDEX IF NOT EXISTS team_tasks ON tasks(root_id,ordinal)')
             con.execute('CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,path TEXT NOT NULL,network INTEGER NOT NULL DEFAULT 0)')
             con.execute('CREATE TABLE IF NOT EXISTS actions(id TEXT PRIMARY KEY,project_id TEXT NOT NULL,name TEXT NOT NULL,target TEXT NOT NULL,argv TEXT NOT NULL,automatic INTEGER NOT NULL DEFAULT 0)')
 
+        from office.knowledge import initialize
+        initialize(self)
 
     @contextmanager
     def connect(self):
@@ -67,17 +69,19 @@ class Store:
             self._put(con, 'office', state)
             con.execute("UPDATE tasks SET status='cancel_requested', updated=? WHERE status='running'", (time.time(),))
 
-    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None):
+    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=()):
         prompt = prompt.strip()
         if role not in ROLES or not 5 <= len(prompt) <= 5000:
             raise ValueError('담당 직원을 선택하고 업무를 5~5000자로 입력하세요.')
         kind = 'plan' if role == 'lead' and delegate else 'single'
+        from office.knowledge import snapshot
+        context=snapshot(self,prompt,project_id,source_ids)
         identifier = identifier or str(uuid.uuid4())
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             old = con.execute('SELECT * FROM tasks WHERE id=?', (identifier,)).fetchone()
             if old:
-                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id:
+                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id or sorted(set(source_ids)) != json.loads(old['context_json']).get('selected_ids',[]):
                     raise ValueError('같은 업무 ID에 다른 내용을 제출할 수 없습니다.')
                 return identifier
             state = self._get(con, 'office', {})
@@ -88,8 +92,8 @@ class Store:
             if project_id and not con.execute('SELECT 1 FROM projects WHERE id=?',(project_id,)).fetchone():
                 raise ValueError('등록된 프로젝트를 선택하세요.')
             now = time.time()
-            con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,parent,kind,project_id) VALUES(?,?,?,?,?,?,?,?,?)',
-                        (identifier, role, prompt, 'queued', now, now, parent, kind, project_id))
+            con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,parent,kind,project_id,context_json) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                        (identifier, role, prompt, 'queued', now, now, parent, kind, project_id, json.dumps(context,ensure_ascii=False)))
         return identifier
 
     def tasks(self):
@@ -168,8 +172,8 @@ class Store:
                     now = time.time()
                     action = registered.get(step.get('action'))
                     status = 'awaiting_approval' if action and not action['automatic'] else 'queued'
-                    con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-                                (str(uuid.uuid4()), step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else ''))
+                    con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                                (str(uuid.uuid4()), step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json']))
             if old['root_id']:
                 if result['status'] != 'review':
                     self._block_team(con, old['root_id'], '직원 실행이 실패·중단되어 팀 진행을 멈췄습니다. 완료 결과를 확인하고 다시 지시하세요.')
@@ -180,8 +184,8 @@ class Store:
                     if not remaining:
                         ordinal = con.execute('SELECT MAX(ordinal) FROM tasks WHERE root_id=?', (old['root_id'],)).fetchone()[0] + 1
                         now = time.time()
-                        con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                                    (str(uuid.uuid4()), 'lead', '직원들의 제출물을 검토하고 대표에게 최종 결과와 남은 문제를 보고하세요.', 'queued', now, now, 'report', old['root_id'], ordinal, old['project_id']))
+                        con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                                    (str(uuid.uuid4()), 'lead', '직원들의 제출물을 검토하고 대표에게 최종 결과와 남은 문제를 보고하세요.', 'queued', now, now, 'report', old['root_id'], ordinal, old['project_id'], old['context_json']))
 
     def complete(self, identifier):
         with self.connect() as con:

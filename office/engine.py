@@ -13,6 +13,7 @@ import uuid
 from scripts.local_office import ROLES
 from office.planning import instructions
 from office.workspaces import Workspace
+from office.knowledge import prepare_inputs
 
 
 def codex_command():
@@ -79,9 +80,13 @@ def run_codex(store, task, end):
         if task.get('parent'):
             parent = store.get(task['parent'])
             prompt += '\n이전 업무: ' + parent['prompt'] + '\n이전 결과: ' + parent['output'][-20000:] + '\n'
+        knowledge,images=prepare_inputs(task,workspace.directory/'inputs')
+        prompt += '\n아래 첨부 원본 경로는 대표가 제공한 읽기 전용 자료이며 프로젝트 밖이어도 열람 가능합니다. 수정·게시하지 마세요.\n'+knowledge
         prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
         args = codex_command() + ['exec', '--ignore-user-config', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        for image_path in images:
+            args[-1:-1]=['--image',image_path]
         if writable and project.get('network'):
             args[-1:-1] = ['-c','sandbox_workspace_write.network_access=true']
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
