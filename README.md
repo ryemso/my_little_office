@@ -1,3 +1,5 @@
+> 다음 구현 설계: [사무실 안에서 지시하고 실행하기](docs/DIRECT_OFFICE_DESIGN.md). Pages와 PC를 직접 연결해 복사·외부 접수 단계를 없애는 설계이며, 아직 구현 전입니다.
+
 > **v0.5 로컬 Codex 출근 연결**: 유료 API 대신 PC의 ChatGPT 로그인 Codex가 업무 초안을 작성합니다. GitHub는 접수·공개 결과를 보관합니다. 하루 5시간 구간 2회, 실제 사용 한도 도달 시 중단합니다. [PC 최초 설정](docs/AI_SETUP.md) 후 `start-office.bat`로 출근하세요. 현재 제품 파일 수정·배포는 연결되지 않았습니다.
 
 # My Little Office
