@@ -9,11 +9,37 @@ import subprocess
 import tempfile
 import threading
 import time
+import traceback
 import uuid
 from scripts.local_office import ROLES
 from office.planning import instructions
 from office.workspaces import Workspace
 from office.knowledge import prepare_inputs
+
+
+def safe_diagnostic(value):
+    """Diagnostics are local, but still omit common credentials from UI/logs."""
+    value=str(value)
+    value=re.sub(r'sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]+', '[REDACTED]',value)
+    value=re.sub(r'(?i)(bearer\s+)[^\s\"\']+',r'\1[REDACTED]',value)
+    value=re.sub(r'(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password)\s*[\"\']?\s*[:=]\s*[\"\']?)[^\s\"\',}]+',r'\1[REDACTED]',value)
+    for name in ('OPENAI_API_KEY','CODEX_API_KEY','GH_TOKEN','GITHUB_TOKEN'):
+        secret=os.getenv(name)
+        if secret:value=value.replace(secret,'[REDACTED]')
+    return value
+
+
+def exception_result(store, error):
+    identifier=str(uuid.uuid4())
+    message=f'{type(error).__name__}: {safe_diagnostic(error)}'
+    try:
+        logs=store.root/'logs';logs.mkdir(exist_ok=True)
+        path=logs/('worker-'+identifier+'.log')
+        path.write_text(safe_diagnostic(traceback.format_exc()),encoding='utf-8')
+        detail='\n진단 파일: '+str(path)
+    except OSError:
+        detail='\n진단 파일 저장에도 실패했습니다. PC 폴더 권한·저장 공간을 확인하세요.'
+    return {'status':'failed','error':'로컬 실행 실패 · '+message[:1200]+detail}
 
 
 def codex_command():
@@ -93,8 +119,13 @@ def run_codex(store, task, end):
         with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
             process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
             try:
-                process.stdin.write(prompt)
-                process.stdin.close()
+                try:
+                    process.stdin.write(prompt)
+                    process.stdin.close()
+                except (BrokenPipeError, OSError):
+                    # A CLI that rejects arguments can exit before it consumes stdin.
+                    # Continue to its exit status/stderr instead of hiding the cause.
+                    pass
                 while process.poll() is None:
                     current = store.get(task['id'])
                     if current['status'] == 'cancel_requested' or time.time() >= end or stdout.stat().st_size + stderr.stat().st_size > 8_000_000:
@@ -117,7 +148,9 @@ def run_codex(store, task, end):
         if failed or not text.strip() or not any(e.get('type') == 'turn.completed' for e in events):
             diagnostics = stderr.read_text(encoding='utf-8', errors='replace') + json.dumps(events)
             quota = re.search(r'usage.limit|rate.limit|quota.exceeded', diagnostics, re.I)
-            return {'status': 'quota_wait' if quota else 'failed', 'error': 'Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else 'Codex 실행 실패. PC의 logs 폴더에서 상세를 확인하세요.'}
+            event_errors=[e.get('message') or e.get('error') for e in events if e.get('type') in ('error','turn.failed')]
+            reason=stderr.read_text(encoding='utf-8',errors='replace').strip() or json.dumps(event_errors,ensure_ascii=False)
+            return {'status': 'quota_wait' if quota else 'failed', 'error': 'Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else 'Codex 실행 실패 (종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)}
         if re.search(r'sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN .*PRIVATE KEY-----', text):
             return {'status': 'failed', 'error': '비밀 키로 의심되는 결과의 표시를 차단했습니다. PC 로그를 확인하세요.'}
         usage = next((e.get('usage', {}) for e in reversed(events) if e.get('type') == 'turn.completed'), {})
@@ -165,8 +198,8 @@ class Worker:
             return
         try:
             result = self.runner(self.store, task, time.time() + 1200)
-        except Exception:
-            result = {'status': 'failed', 'error': '로컬 실행 오류. Codex 로그인과 PC 환경을 확인하세요.'}
+        except Exception as error:
+            result = exception_result(self.store,error)
         self.store.finish(task['id'], result)
         if self.store.get(task['id'])['status'] in ('failed', 'quota_wait'):
             self.store.pause('실행 오류·한도 대기. 확인 후 출근 버튼으로 재개하세요.')
