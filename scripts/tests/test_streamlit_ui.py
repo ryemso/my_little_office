@@ -51,3 +51,37 @@ class StreamlitUITests(unittest.TestCase):
             finally:
                 for worker in instances:worker.close()
                 st.cache_resource.clear()
+
+    def test_lead_delegates_from_one_form_submission(self):
+        try:
+            import streamlit as st
+            from streamlit.testing.v1 import AppTest
+        except ImportError:
+            self.skipTest('Install requirements.txt to run Streamlit UI tests')
+        import json
+        from office.engine import Worker
+        instances=[]
+        def execute(store, task, end):
+            output=json.dumps({'tasks':[{'role':'plan','prompt':'기능 명세를 작성해주세요'},{'role':'dev','prompt':'기능 명세를 코드 초안으로 작성해줘'}]}) if task['kind']=='plan' else '담당 결과물' if task['kind']=='employee' else '총괄의 최종 보고'
+            return {'status':'review','output':output}
+        def create_worker(store):
+            worker=Worker(store,execute);instances.append(worker);return worker
+        st.cache_resource.clear()
+        with tempfile.TemporaryDirectory() as directory,patch('scripts.local_office.STATE',Path(directory)),patch('office.engine.Worker',side_effect=create_worker),patch('office.engine.require_login'):
+            try:
+                app=AppTest.from_file(str(Path(__file__).resolve().parents[2]/'streamlit_app.py')).run(timeout=15)
+                next(b for b in app.button if b.label=='출근 / 근무 재개').click().run()
+                app.text_area[0].input('기능을 기획하고 코드 초안을 만든 뒤 최종 보고해줘')
+                next(b for b in app.button if b.label=='업무 지시').click().run()
+                root=next(t for t in instances[0].store.tasks() if t['kind']=='plan')
+                for _ in range(60):
+                    if instances[0].store.get(root['id'])['status']=='review':break
+                    time.sleep(.1)
+                app.run()
+                self.assertFalse(app.exception)
+                self.assertEqual(instances[0].store.get(root['id'])['output'],'총괄의 최종 보고')
+                self.assertEqual(len(instances[0].store.children(root['id'])),3)
+                self.assertTrue(any('총괄' in element.value for element in app.text))
+            finally:
+                for worker in instances:worker.close()
+                st.cache_resource.clear()

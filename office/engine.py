@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from scripts.local_office import ROLES
+from office.planning import instructions
 
 
 def codex_command():
@@ -70,6 +71,7 @@ def run_codex(store, task, end):
         if task.get('parent'):
             parent = store.get(task['parent'])
             prompt += '\n이전 업무: ' + parent['prompt'] + '\n이전 결과: ' + parent['output'][-20000:] + '\n'
+        prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
         args = codex_command() + ['exec', '--ignore-user-config', '--sandbox', 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
@@ -141,7 +143,7 @@ class Worker:
         except Exception:
             result = {'status': 'failed', 'error': '로컬 실행 오류. Codex 로그인과 PC 환경을 확인하세요.'}
         self.store.finish(task['id'], result)
-        if result['status'] in ('failed', 'quota_wait'):
+        if self.store.get(task['id'])['status'] in ('failed', 'quota_wait'):
             self.store.pause('실행 오류·한도 대기. 확인 후 출근 버튼으로 재개하세요.')
 
     def loop(self):

@@ -9,9 +9,9 @@ def build(check=False):
     css = '\n'.join(line for line in css.splitlines() if not line.startswith('@import'))
     js = (ROOT / 'site/app.js').read_text(encoding='utf-8').split('// AI results are public data;')[0]
     bridge = '''
-const labels={queued:'대기',running:'작업 중',review:'검토 대기',completed:'완료',cancel_requested:'중단 요청',interrupted:'중단',failed:'실패',quota_wait:'한도 대기',cancelled:'취소'};
+const labels={delegating:'총괄 진행 관리',blocked:'팀 업무 중단',queued:'대기',running:'작업 중',review:'검토 대기',completed:'완료',cancel_requested:'중단 요청',interrupted:'중단',failed:'실패',quota_wait:'한도 대기',cancelled:'취소'};
 function renderAIUI(){
- for(const p of people){const task=officeTasks.find(t=>t.role===p.id);const el=document.querySelector('[data-role="'+p.id+'"]');el.classList.toggle('ai-working',task?.status==='running');el.querySelector('.bubble').textContent=task?.status==='running'?'작업':task?.status==='review'?'검토':'···';}
+ for(const p of people){const task=officeTasks.find(t=>t.role===p.id);const el=document.querySelector('[data-role="'+p.id+'"]');el.classList.toggle('ai-working',task?.status==='running');el.querySelector('.bubble').textContent=task?.status==='running'?'작업':task?.status==='review'?'검토':task?.status==='delegating'?'관리':'···';}
  const state=document.querySelector('#employee-task-state'),task=officeTasks.find(t=>t.role===selected);
  if(state)state.textContent=task?(labels[task.status]||task.status):'배정된 업무 없음';
 }

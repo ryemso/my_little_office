@@ -1,4 +1,6 @@
-# Streamlit 실행 사무실 (v0.6)
+> v0.7: 총괄에게 지시할 때 자동 배정을 선택하면 직원들이 순서대로 수행하고 총괄이 보고합니다. 이번 버전을 한 번 받은 뒤부터 `update-office.bat`으로 최신 코드를 받아 실행할 수 있습니다. [배정·업데이트 사용법](DELEGATION_AND_UPDATES.md).
+
+# Streamlit 실행 사무실 (v0.7)
 
 이제 사무실 안에서 직원 선택 → 업무 지시 → 실행 → 결과 검토까지 진행합니다. 명령 복사나 ChatGPT·GitHub Actions에 재입력할 필요가 없습니다.
 
@@ -73,6 +75,6 @@ python3 -m venv .venv
 
 ## 검증 범위
 
-백엔드·Codex 어댑터·Streamlit AppTest 총 21개 테스트, JS 문법, 정적 링크, 로컬 서버 health와 HTML 응답을 검증했습니다. UI 테스트의 Codex 응답은 모의 응답입니다. 실제 ChatGPT 구독 인증과 모델 실행, Windows 브라우저에서의 아바타 선택·프로세스 트리 중단은 사용자 PC에서 최종 검증해야 합니다.
+백엔드·Codex 어댑터·Streamlit AppTest 총 36개 테스트, JS 문법, 정적 링크, 로컬 서버 health와 HTML 응답을 검증했습니다. UI 테스트의 Codex 응답은 모의 응답입니다. 실제 ChatGPT 구독 인증과 모델 실행, Windows 브라우저에서의 아바타 선택·프로세스 트리 중단은 사용자 PC에서 최종 검증해야 합니다.
 
 공식 참고: https://docs.streamlit.io/develop/concepts/custom-components/intro , https://docs.streamlit.io/develop/api-reference/execution-flow/st.fragment , https://developers.openai.com/codex/noninteractive/

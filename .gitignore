@@ -4,3 +4,7 @@ __pycache__/
 *.sqlite3*
 .env
 .streamlit/secrets.toml
+.office-backups/
+.office-update-journal.json
+*.office-new
+.office-new-*
