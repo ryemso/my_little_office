@@ -3,6 +3,7 @@ import atexit
 import json
 from pathlib import Path
 import uuid
+from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 from office.engine import Worker, require_login
@@ -10,7 +11,7 @@ from office.store import Store
 from office import knowledge
 from office.sync import publish
 from office.workspaces import Workspace
-from scripts.local_office import ROLES, STATE
+from scripts.local_office import ROLES, STATE, KST
 
 st.set_page_config(page_title='My Little Office · 출근 사무실', page_icon='🏡', layout='wide')
 
@@ -128,6 +129,7 @@ if submitted:
         identifier = store.submit(role, prompt, request_id, st.session_state.parent_task, delegate=auto_team, project_id=project_id,source_ids=source_ids)
         st.session_state.last_submission = (signature, identifier)
         st.session_state.request_id = str(uuid.uuid4())
+        st.session_state.chat_channel = store.thread_id(identifier)
         st.success('PC에 업무를 접수했습니다. 직원이 순서대로 처리합니다.')
     except Exception as error:
         st.error(str(error))
@@ -143,6 +145,50 @@ def task_label(task):
     if task['kind'] in ('employee', 'report') and task['status'] == 'review':
         return '직원 제출 완료' if task['kind'] == 'employee' else '총괄 보고 제출'
     return LABELS[task['status']]
+
+CHAT_NAMES={'owner':'대표', 'system':'사무실 시스템', **ROLES}
+CHAT_AVATARS={'owner':'👑','lead':'🧭','plan':'💡','dev':'🛠️','design':'🎨','market':'📣','data':'📊','system':'🏡'}
+
+@st.fragment(run_every='2s')
+def work_chat():
+    st.subheader('💬 업무 대화')
+    channels=store.channels()
+    if not channels:
+        st.info('첫 업무를 지시하면 대표와 직원들의 대화가 여기에 남습니다.')
+        return
+    by_id={channel['id']:channel for channel in channels}
+    if st.session_state.get('chat_channel') not in by_id:st.session_state.chat_channel=channels[0]['id']
+    channel_id=st.selectbox('업무 대화방',list(by_id),format_func=lambda value:by_id[value]['prompt'][:65],key='chat_channel')
+    channel=by_id[channel_id]
+    st.caption('대표 → 총괄 배정 → 직원 실행 → 결과 보고 · 실제 접수·실행 이벤트를 2초마다 갱신합니다.')
+    count_key='chat_count_'+channel_id
+    count=st.session_state.get(count_key,200)
+    messages=store.messages(channel_id,count)
+    if messages and store.messages(channel_id,1,before=messages[0]['id']):
+        if st.button('이전 대화 200개 더 보기',key='older-'+channel_id):
+            st.session_state[count_key]=count+200;st.rerun()
+    with st.container(height=570,border=True,key='chat-window-'+channel_id,autoscroll=True):
+        for message in messages:
+            name=CHAT_NAMES.get(message['actor'],message['actor'])
+            with st.chat_message(name,avatar=CHAT_AVATARS.get(message['actor'],'💬')):
+                timestamp=datetime.fromtimestamp(message['created'],KST).strftime('%m/%d %H:%M:%S')
+                st.caption(name+' · '+timestamp+' KST'+(' · 기존 기록에서 복원' if message['historical'] else ''))
+                if message['kind']=='error':st.error(message['body'])
+                elif message['kind']=='progress' and message['body'].startswith('명령 실행'):st.code(message['body'],language='text')
+                else:st.markdown(message['body'])
+    reply=st.chat_input('이 대화에 추가 업무 지시',max_chars=5000,key='chat-input-'+channel_id)
+    if reply:
+        try:
+            value=reply
+            selected=st.session_state.get('selected_role','lead')
+            store.submit(selected,value,parent=channel_id,delegate=selected=='lead',project_id=channel['project_id'])
+            st.rerun()
+        except ValueError as error:st.error(str(error))
+    st.caption('추가 지시는 현재 선택한 직원에게 전달합니다. 파일·링크 첨부는 위 업무 지시 입력란을 사용하세요. 승인·중단·결과 파일은 아래 상세 관리에서 확인합니다.')
+    transcript=store.transcript(channel_id)
+    st.download_button('대화 기록 다운로드',json.dumps(transcript,ensure_ascii=False,indent=2),file_name='office-chat.json',mime='application/json',key='chat-export-'+channel_id)
+
+work_chat()
 
 @st.fragment(run_every='2s')
 def task_board():
@@ -211,7 +257,8 @@ def task_board():
     st.download_button('업무 기록 JSON 다운로드', json.dumps(export, ensure_ascii=False, indent=2), file_name='office-records.json', mime='application/json')
     st.caption('원본 업무 DB와 실행 로그는 PC에 남습니다. 이 앱은 업무 내용을 자동으로 공개하지 않습니다.')
 
-task_board()
+with st.expander('업무 상세 관리 · 승인·중단·파일·검토'):
+    task_board()
 with st.expander('GitHub에 공개 기록 저장'):
     consent = st.checkbox('종료된 업무의 지시·결과를 공개 저장소와 Pages에 공개합니다.')
     if st.button('종료된 업무 기록 동기화', disabled=not consent):

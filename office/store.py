@@ -6,10 +6,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from scripts.local_office import ROLES
 from office.planning import parse_plan
+from office.conversation import Conversations
 
 TERMINAL = ('review', 'completed', 'failed', 'interrupted', 'cancelled', 'quota_wait', 'blocked')
 
-class Store:
+class Store(Conversations):
     def __init__(self, root):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -33,6 +34,7 @@ class Store:
 
         from office.knowledge import initialize
         initialize(self)
+        self.initialize_conversations()
 
     @contextmanager
     def connect(self):
@@ -67,6 +69,8 @@ class Store:
             state = self._get(con, 'office', {})
             state.update(on_duty=False, message=message)
             self._put(con, 'office', state)
+            for active in con.execute("SELECT id FROM tasks WHERE status='running'").fetchall():
+                self._message(con,active['id'],'pause-request','system','status',message+' · 현재 작업에 중단을 요청했습니다.')
             con.execute("UPDATE tasks SET status='cancel_requested', updated=? WHERE status='running'", (time.time(),))
 
     def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=()):
@@ -75,6 +79,10 @@ class Store:
             raise ValueError('담당 직원을 선택하고 업무를 5~5000자로 입력하세요.')
         kind = 'plan' if role == 'lead' and delegate else 'single'
         from office.knowledge import snapshot
+        if parent and not source_ids:
+            previous=self.get(parent)
+            if previous and previous['project_id']==project_id:
+                source_ids=json.loads(previous['context_json']).get('selected_ids',[])
         context=snapshot(self,prompt,project_id,source_ids)
         identifier = identifier or str(uuid.uuid4())
         with self.connect() as con:
@@ -94,6 +102,8 @@ class Store:
             now = time.time()
             con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,parent,kind,project_id,context_json) VALUES(?,?,?,?,?,?,?,?,?,?)',
                         (identifier, role, prompt, 'queued', now, now, parent, kind, project_id, json.dumps(context,ensure_ascii=False)))
+            self._message(con,identifier,'submitted','owner','instruction',prompt,now)
+            self._message(con,identifier,'accepted',role,'status','업무를 접수했습니다. 실행 순서를 기다립니다.')
         return identifier
 
     def tasks(self):
@@ -120,6 +130,7 @@ class Store:
                 ORDER BY t.created LIMIT 1""").fetchone()
             if task:
                 con.execute("UPDATE tasks SET status='running',updated=? WHERE id=?", (time.time(), task['id']))
+                self._message(con,task['id'],'started',task['role'],'status','총괄 최종 검토를 시작합니다.' if task['kind']=='report' else '업무를 시작합니다.')
                 return dict(task)
 
     def children(self, identifier):
@@ -130,12 +141,16 @@ class Store:
         con.execute("UPDATE tasks SET status='blocked',error=?,updated=? WHERE id=? AND status='delegating'", (reason, time.time(), root_id))
         con.execute("UPDATE tasks SET status='cancelled',error=?,updated=? WHERE root_id=? AND status IN ('queued','awaiting_approval')", (reason, time.time(), root_id))
 
+        self._message(con,root_id,'blocked','lead','error',reason)
+
     def cancel(self, identifier):
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             task = con.execute('SELECT * FROM tasks WHERE id=?', (identifier,)).fetchone()
             if not task:
                 return
+            if task['status'] in ('queued','running','delegating','awaiting_approval'):
+                self._message(con,identifier,'cancel','owner','status','이 업무를 중단해주세요.')
             if task['status'] == 'delegating':
                 con.execute("UPDATE tasks SET status='cancelled',updated=? WHERE id=?", (time.time(), identifier))
                 con.execute("UPDATE tasks SET status=CASE WHEN status='running' THEN 'cancel_requested' ELSE 'cancelled' END,updated=? WHERE root_id=? AND status IN ('queued','running','awaiting_approval')", (time.time(), identifier))
@@ -166,14 +181,21 @@ class Store:
                     result = dict(result, status='failed', error='총괄 배정 형식이 올바르지 않아 실행하지 않았습니다. 결과 확인 후 추가 지시하세요.')
             con.execute('UPDATE tasks SET status=?,output=?,error=?,usage=?,evidence_json=?,updated=? WHERE id=?',
                         (result['status'], result.get('output', ''), result.get('error', ''), json.dumps(result.get('usage', {})), json.dumps(result.get('evidence', {}),ensure_ascii=False), time.time(), identifier))
+            if result.get('error'):self._message(con,identifier,'error',old['role'],'error',result['error'])
+            if result.get('output') and not steps and not con.execute('SELECT 1 FROM messages WHERE task_id=? AND body=?',(identifier,result['output'])).fetchone():
+                self._message(con,identifier,'result',old['role'],'result',result['output'])
+            self._message(con,identifier,'finished',old['role'],'status','업무 배정을 정리했습니다.' if steps else {'review':'결과를 제출했습니다.','failed':'업무 실행에 실패했습니다.','interrupted':'업무가 중단됐습니다.','quota_wait':'사용 한도로 대기합니다.'}.get(result['status'],result['status']))
             if steps:
                 con.execute("UPDATE tasks SET status='delegating',plan_json=? WHERE id=?", (json.dumps({'tasks': steps}, ensure_ascii=False), identifier))
                 for ordinal, step in enumerate(steps, 1):
                     now = time.time()
                     action = registered.get(step.get('action'))
                     status = 'awaiting_approval' if action and not action['automatic'] else 'queued'
+                    child_id=str(uuid.uuid4())
                     con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                                (str(uuid.uuid4()), step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json']))
+                                (child_id, step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json']))
+                    self._message(con,child_id,'submitted','lead','assignment',ROLES[step['role']]+' 담당에게 배정합니다.\n'+step['prompt'])
+                    if status=='awaiting_approval':self._message(con,child_id,'approval-needed','system','status','연결 작업 실행 승인을 기다립니다.')
             if old['root_id']:
                 if result['status'] != 'review':
                     self._block_team(con, old['root_id'], '직원 실행이 실패·중단되어 팀 진행을 멈췄습니다. 완료 결과를 확인하고 다시 지시하세요.')
@@ -184,16 +206,20 @@ class Store:
                     if not remaining:
                         ordinal = con.execute('SELECT MAX(ordinal) FROM tasks WHERE root_id=?', (old['root_id'],)).fetchone()[0] + 1
                         now = time.time()
+                        self._message(con,old['root_id'],'report-ready','lead','status','직원 제출이 끝났습니다. 결과를 모아 최종 보고를 준비합니다.')
                         con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                                     (str(uuid.uuid4()), 'lead', '직원들의 제출물을 검토하고 대표에게 최종 결과와 남은 문제를 보고하세요.', 'queued', now, now, 'report', old['root_id'], ordinal, old['project_id'], old['context_json']))
 
     def complete(self, identifier):
         with self.connect() as con:
-            con.execute("UPDATE tasks SET status='completed',updated=? WHERE id=? AND status='review'", (time.time(), identifier))
+            updated=con.execute("UPDATE tasks SET status='completed',updated=? WHERE id=? AND status='review'", (time.time(), identifier))
+            if updated.rowcount:self._message(con,identifier,'reviewed','owner','status','결과 검토를 완료했습니다.')
 
     def recover(self):
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
+            for interrupted in con.execute("SELECT id FROM tasks WHERE status IN ('running','cancel_requested')").fetchall():
+                self._message(con,interrupted['id'],'recovered','system','error','PC 실행 중단으로 업무를 중단 처리했습니다. 결과 확인 후 다시 지시하세요.')
             active = con.execute("SELECT root_id FROM tasks WHERE status IN ('running','cancel_requested') AND root_id IS NOT NULL").fetchall()
             con.execute("UPDATE tasks SET status='interrupted',error='PC 실행 중단. 결과 확인 후 후속 지시로 재개하세요.',updated=? WHERE status IN ('running','cancel_requested')", (time.time(),))
             for row in active:
@@ -244,6 +270,7 @@ class Store:
             if con.execute("SELECT 1 FROM tasks WHERE root_id=? AND ordinal<? AND status NOT IN ('review','completed')",(task['root_id'],task['ordinal'])).fetchone():
                 raise ValueError('앞 직원의 결과가 나온 뒤 실행할 내용을 확인하고 승인하세요.')
             con.execute("UPDATE tasks SET status='queued',approval_hash=?,updated=? WHERE id=?",(fingerprint,time.time(),identifier))
+            self._message(con,identifier,'approved','owner','status','확인한 내용으로 연결 작업 실행을 승인합니다.')
 
     def set_project_network(self, identifier, enabled):
         with self.connect() as con:

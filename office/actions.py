@@ -27,6 +27,7 @@ def run_action(store,task,end):
     action=json.loads(task['action_json'])
     if not action['automatic'] and workspace.fingerprint()!=task.get('approval_hash'):
         return {'status':'failed','error':'승인 이후 작업 파일이 바뀌었습니다. 변경을 확인한 뒤 다시 지시하세요.'}
+    store.message(task['id'],'action-start',task['role'],'status','연결 작업을 실행합니다.\n작업: '+action['name']+'\n대상: '+action['target'])
     argv=json.loads(action['argv'])
     args=executable(argv)
     env=dict(os.environ)

@@ -16,6 +16,7 @@ from scripts.local_office import ROLES
 from office.planning import instructions
 from office.workspaces import Workspace
 from office.knowledge import prepare_inputs
+from office.conversation import LiveEvents
 
 
 def safe_diagnostic(value):
@@ -118,6 +119,8 @@ def run_codex(store, task, end):
         prompt += ('현재 프로젝트에서 필요한 문서·코드·홍보물을 실제 파일로 작성하고 수정하세요. 필요한 테스트·빌드·분석 명령을 실행하고 실패하면 수정하세요. 프로젝트 밖의 파일·인증 정보에는 접근하지 마세요. 외부 게시·배포는 등록된 연결 작업으로 처리합니다. 실제로 실행한 증거와 남은 문제를 보고하세요.\n' if writable else '분석·계획·검토를 수행하세요. 현재 단계는 읽기 전용입니다. 실제로 실행하지 않은 일을 완료했다고 말하지 마세요.\n')
         if task.get('parent'):
             parent = store.get(task['parent'])
+            history=store.messages(store.thread_id(parent['id']),limit=30)
+            prompt+='\n같은 업무방의 최근 공개 대화(실행 증거·발화자 구분 참고):\n'+('\n'.join(event['actor']+': '+event['body'] for event in history if event['task_id']!=task['id']))[-12000:]+'\n'
             prompt += '\n이전 업무: ' + parent['prompt'] + '\n이전 결과: ' + parent['output'][-20000:] + '\n'
         knowledge,images=prepare_inputs(task,workspace.directory/'inputs')
         prompt += '\n아래 첨부 원본 경로는 대표가 제공한 읽기 전용 자료이며 프로젝트 밖이어도 열람 가능합니다. 수정·게시하지 마세요.\n'+knowledge
@@ -131,6 +134,7 @@ def run_codex(store, task, end):
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
         with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
             process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
+            live=LiveEvents(store,task,stdout)
             try:
                 try:
                     process.stdin.write(prompt)
@@ -140,6 +144,7 @@ def run_codex(store, task, end):
                     # Continue to its exit status/stderr instead of hiding the cause.
                     pass
                 while process.poll() is None:
+                    live.poll()
                     current = store.get(task['id'])
                     if current['status'] == 'cancel_requested' or time.time() >= end or stdout.stat().st_size + stderr.stat().st_size > 8_000_000:
                         stop_process(process)
@@ -148,6 +153,7 @@ def run_codex(store, task, end):
             finally:
                 if process.poll() is None:
                     stop_process(process)
+                live.poll(final=True)
         events = []
         for line in stdout.read_text(encoding='utf-8', errors='replace').splitlines():
             try:
