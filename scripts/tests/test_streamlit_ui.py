@@ -22,6 +22,8 @@ class StreamlitUITests(unittest.TestCase):
             try:
                 app = AppTest.from_file(str(Path(__file__).resolve().parents[2] / 'streamlit_app.py')).run(timeout=15)
                 self.assertFalse(app.exception)
+                self.assertNotIn('오늘 근무 구간', [m.label for m in app.metric])
+                self.assertNotIn('남은 시간', [m.label for m in app.metric])
                 next(b for b in app.button if b.label=='출근 / 근무 재개').click().run()
                 app.selectbox[0].select('dev')
                 app.text_area[0].input('모바일 첫 화면 개선안을 작성해줘')

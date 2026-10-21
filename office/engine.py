@@ -133,14 +133,11 @@ class Worker:
         status, _ = self.store.status()
         if not status.get('on_duty'):
             return
-        if time.time() >= status['end']:
-            self.store.pause('근무 구간 종료')
-            return
         task = self.store.claim()
         if not task:
             return
         try:
-            result = self.runner(self.store, task, min(status['end'], time.time() + 1200))
+            result = self.runner(self.store, task, time.time() + 1200)
         except Exception:
             result = {'status': 'failed', 'error': '로컬 실행 오류. Codex 로그인과 PC 환경을 확인하세요.'}
         self.store.finish(task['id'], result)

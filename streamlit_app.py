@@ -3,14 +3,12 @@ import atexit
 import json
 from pathlib import Path
 import uuid
-import time
-from datetime import datetime
 import streamlit as st
 import streamlit.components.v1 as components
 from office.engine import Worker, require_login
 from office.store import Store
 from office.sync import publish
-from scripts.local_office import ROLES, STATE, KST
+from scripts.local_office import ROLES, STATE
 
 st.set_page_config(page_title='My Little Office · 출근 사무실', page_icon='🏡', layout='wide')
 
@@ -39,16 +37,12 @@ st.caption('내 PC에서 출근하는 작은 AI 회사 · 직원에게 직접 �
 
 @st.fragment(run_every='2s')
 def live_office():
-    status, attendance = store.status()
-    columns = st.columns(4)
-    columns[0].metric('근무 상태', status.get('message', '출근 전'))
-    today = datetime.now(KST).date().isoformat()
-    shifts = attendance.get('shifts', []) if attendance.get('day') == today else []
-    columns[1].metric('오늘 근무 구간', f"{len(shifts)} / 2")
-    remaining = max(0, int(status.get('end', 0) - time.time())) if status.get('on_duty') else 0
-    columns[2].metric('남은 시간', f'{remaining // 3600}시간 {(remaining % 3600) // 60}분')
+    status, _ = store.status()
     tasks = store.tasks()
-    columns[3].metric('검토 대기', sum(t['status'] == 'review' for t in tasks))
+    columns = st.columns(3)
+    columns[0].metric('근무 상태', status.get('message', '출근 전'))
+    columns[1].metric('실행 대기', sum(t['status'] == 'queued' for t in tasks))
+    columns[2].metric('검토 대기', sum(t['status'] == 'review' for t in tasks))
     left, right = st.columns(2)
     if left.button('출근 / 근무 재개', disabled=status.get('on_duty', False), use_container_width=True):
         try:
@@ -141,4 +135,4 @@ with st.expander('GitHub에 공개 기록 저장'):
             st.error('GitHub 저장 실패. PC에서 gh auth login으로 저장소 쓰기 권한을 확인하세요. 로컬 결과는 유지됩니다.')
 with st.expander('최초 설정 · 사용 안내'):
     st.markdown('1. `npm install -g @openai/codex`\n2. 터미널에서 `codex login` → ChatGPT 로그인\n3. 이 화면에서 **출근** → 직원 선택 → **업무 지시**')
-    st.caption('GitHub CLI·API 키는 직접 업무 실행에 필요하지 않습니다. 창을 닫아도 PC 서버가 켜져 있으면 작업이 계속됩니다. PC 종료 시 멈춥니다. 하루 5시간 구간 2회는 회사 규칙이며 실제 Codex 한도가 먼저 적용될 수 있습니다.')
+    st.caption('GitHub CLI·API 키는 직접 업무 실행에 필요하지 않습니다. 창을 닫아도 PC 서버가 켜져 있으면 작업이 계속됩니다. PC 종료 시 멈춥니다. 앱의 일일 근무 시간·횟수 제한은 없습니다. 퇴근할 때까지 업무를 처리하며 Codex 자체 사용 한도는 적용됩니다.')

@@ -49,21 +49,6 @@ def save(state):
     temp.replace(STATE / 'state.json')
 
 
-def attendance(state, now):
-    day = datetime.fromtimestamp(now, KST).date().isoformat()
-    if state.get('day') != day:
-        state.update(day=day, shifts=[])
-    shifts = state['shifts']
-    if shifts and now < shifts[-1]['end']:
-        return shifts[-1]
-    if len(shifts) >= 2:
-        raise RuntimeError('Today’s two work periods are finished (Korea time).')
-    midnight = (datetime.fromtimestamp(now, KST).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)).timestamp()
-    shift = {'start': now, 'end': min(now + 5 * 3600, midnight)}
-    shifts.append(shift)
-    return shift
-
-
 def publish_result(state):
     result = state.get('result')
     if not result:
@@ -141,14 +126,13 @@ def main():
     if state.get('active'):
         state['result'] = {'id': state['active'], 'status': 'interrupted', 'error': 'PC 작업 중단. 수동 확인 후 재등록하세요.'}
         save(state); publish_result(state)
-    shift = attendance(state, time.time()); save(state)
-    print('Clocked in. Ctrl+C clocks out. Two 5-hour windows/day; usage limits may stop earlier.')
+    print('Clocked in. Ctrl+C clocks out. No daily work-period limit; Codex usage limits still apply.')
     print(f'Local checkpoint: {STATE}')
-    while time.time() < shift['end']:
+    while True:
         data, _ = read_remote()
         pending = next((t for t in reversed(data['tasks']) if t.get('status') == 'queued'), None)
         if not pending:
-            time.sleep(min(20, max(0, shift['end'] - time.time())))
+            time.sleep(20)
             continue
         if pending.get('role') not in ROLES or not 5 <= len(pending.get('prompt', '')) <= 5000 or not pending.get('publish_consent'):
             raise RuntimeError('Invalid queued task; inspect GitHub record.')
@@ -162,13 +146,12 @@ def main():
         update_remote(claim)
         state['active'] = identifier; save(state)
         print('Working:', pending['role'], identifier)
-        result = execute(pending, int(shift['end'] - time.time()))
+        result = execute(pending, 1200)
         state['result'] = dict(result, id=identifier, finished_at=datetime.now(timezone.utc).isoformat())
         save(state); publish_result(state)
         if result['status'] != 'review':
             print('Paused after failure/interruption. Inspect locally before restarting.')
             return
-    print('Work period finished. Restart manually for the second period, if available.')
 
 
 if __name__ == '__main__':

@@ -144,3 +144,35 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertEqual(publish(records),1)
         self.assertEqual(existing['tasks'][0]['id'],'streamlit-one')
         self.assertEqual(existing['tasks'][1]['id'],'other')
+
+class UnlimitedAttendanceTests(unittest.TestCase):
+    def test_clock_in_has_no_count_day_or_midnight_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(directory)
+            with store.connect() as con:
+                store._put(con, 'attendance', {'day':'2026-10-21','shifts':[{'end':1},{'end':2}]})
+            for number in range(8):
+                store.clock_in(now=1792544400+number*86400)
+                status, _ = store.status()
+                self.assertTrue(status['on_duty'])
+                self.assertNotIn('end',status)
+                store.pause()
+            store.clock_in(now=1)
+            # An old start date never expires submission or task claiming.
+            identifier = store.submit('dev','제한 없이 이어서 설계해줘')
+            self.assertEqual(store.claim()['id'],identifier)
+
+    def test_worker_ignores_expired_legacy_deadline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(directory)
+            worker = Worker(store, lambda *args: {'status':'review','output':'계속 근무'}, start=False)
+            try:
+                with store.connect() as con:
+                    store._put(con,'office',{'on_duty':True,'end':1,'message':'근무 중'})
+                identifier=store.submit('dev','다음 기능을 설계해줘')
+                worker.step()
+                self.assertEqual(store.get(identifier)['status'],'review')
+                self.assertTrue(store.status()[0]['on_duty'])
+                store.pause()
+                with self.assertRaises(ValueError):store.submit('dev','퇴근 후 지시 접수 금지')
+            finally:worker.close()

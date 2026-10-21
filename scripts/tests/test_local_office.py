@@ -11,17 +11,6 @@ office = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(office)
 
 class LocalOfficeTests(unittest.TestCase):
-    def test_two_periods_and_same_period_resume(self):
-        state = {}
-        start = 1792544400  # 2026-10-21 morning KST
-        first = office.attendance(state, start)
-        self.assertEqual(office.attendance(state, start + 60), first)
-        office.attendance(state, first['end'])
-        with self.assertRaises(RuntimeError):
-            office.attendance(state, state['shifts'][-1]['end'])
-        office.attendance(state, start + 86400)
-        self.assertEqual(len(state['shifts']), 1)
-
     def test_success_requires_completed_event_and_readonly(self):
         def fake(args, **kwargs):
             self.assertIn('read-only', args)

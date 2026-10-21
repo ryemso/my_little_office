@@ -4,7 +4,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from scripts.local_office import ROLES, attendance
+from scripts.local_office import ROLES
 
 TERMINAL = ('review', 'completed', 'failed', 'interrupted', 'cancelled', 'quota_wait')
 
@@ -22,10 +22,6 @@ class Store:
                     created REAL NOT NULL, updated REAL NOT NULL, parent TEXT,
                     usage TEXT NOT NULL DEFAULT '{}');
             ''')
-            if not con.execute("SELECT 1 FROM meta WHERE key='attendance'").fetchone():
-                old = self.root / 'state.json'
-                state = json.loads(old.read_text(encoding='utf-8')) if old.exists() else {}
-                con.execute('INSERT INTO meta VALUES (?,?)', ('attendance', json.dumps(state)))
 
     @contextmanager
     def connect(self):
@@ -46,16 +42,13 @@ class Store:
 
     def status(self):
         with self.connect() as con:
-            return self._get(con, 'office', {'on_duty': False, 'end': 0, 'message': '출근 전'}), self._get(con, 'attendance', {})
+            return self._get(con, 'office', {'on_duty': False, 'message': '출근 전'}), self._get(con, 'attendance', {})
 
     def clock_in(self, now=None):
         now = time.time() if now is None else now
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
-            state = self._get(con, 'attendance', {})
-            shift = attendance(state, now)
-            self._put(con, 'attendance', state)
-            self._put(con, 'office', {'on_duty': True, 'end': shift['end'], 'message': '근무 중'})
+            self._put(con, 'office', {'on_duty': True, 'started': now, 'message': '근무 중'})
 
     def pause(self, message='퇴근'):
         with self.connect() as con:
@@ -78,7 +71,7 @@ class Store:
                     raise ValueError('같은 업무 ID에 다른 내용을 제출할 수 없습니다.')
                 return identifier
             state = self._get(con, 'office', {})
-            if not state.get('on_duty') or state.get('end', 0) <= time.time():
+            if not state.get('on_duty'):
                 raise ValueError('먼저 출근하세요. 입력한 명령은 아직 접수되지 않았습니다.')
             if parent and not con.execute('SELECT 1 FROM tasks WHERE id=?', (parent,)).fetchone():
                 raise ValueError('원래 업무를 찾을 수 없습니다.')
@@ -100,7 +93,7 @@ class Store:
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             state = self._get(con, 'office', {})
-            if not state.get('on_duty') or state.get('end', 0) <= time.time():
+            if not state.get('on_duty'):
                 return None
             if con.execute("SELECT 1 FROM tasks WHERE status IN ('running','cancel_requested')").fetchone():
                 return None
