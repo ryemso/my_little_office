@@ -1,4 +1,9 @@
 @echo off
 cd /d "%~dp0"
-py -3 scripts\local_office.py
+if not exist .venv\Scripts\python.exe (
+  echo Run install-office.bat first.
+  pause
+  exit /b 1
+)
+.venv\Scripts\python.exe -m streamlit run streamlit_app.py --server.address=127.0.0.1 --server.port=8501
 pause

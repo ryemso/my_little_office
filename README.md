@@ -1,34 +1,47 @@
-> 다음 구현 설계: [사무실 안에서 지시하고 실행하기](docs/DIRECT_OFFICE_DESIGN.md). Pages와 PC를 직접 연결해 복사·외부 접수 단계를 없애는 설계이며, 아직 구현 전입니다.
-
-> **v0.5 로컬 Codex 출근 연결**: 유료 API 대신 PC의 ChatGPT 로그인 Codex가 업무 초안을 작성합니다. GitHub는 접수·공개 결과를 보관합니다. 하루 5시간 구간 2회, 실제 사용 한도 도달 시 중단합니다. [PC 최초 설정](docs/AI_SETUP.md) 후 `start-office.bat`로 출근하세요. 현재 제품 파일 수정·배포는 연결되지 않았습니다.
-
 # My Little Office
-직무별 AI 직원과 함께 제품·서비스 사업을 진행하기 위한 작은 사무실.
 
-## 사무실
-GitHub Pages 공개 화면: https://ryemso.github.io/my_little_office/
+직무별 AI 직원과 함께 제품·서비스 사업을 진행하는 작은 픽셀 사무실.
 
-현재 버전은 **픽셀 사무실 + PC의 Codex 초안 실행기**입니다. GitHub Actions로 업무를 접수하고 PC 실행기가 처리합니다. 실제 구독 로그인 실행 검증은 PC 설정 후 필요합니다. 생성 코드 실행·외부 발송·매출 발생은 연결 전입니다.
+**v0.6: Streamlit 실행 사무실.** 직원 선택 → 업무 지시 → PC의 Codex 실행 → 결과 확인까지 앱 안에서 진행합니다. 명령을 복사하거나 ChatGPT·GitHub Actions에 다시 입력하지 않습니다.
 
-[AI 업무 최초 설정과 실행 방법](docs/AI_SETUP.md)
+## 시작
 
-## 목적
-대표가 목표를 정하면 총괄이 실행 업무로 구체화하고, 직무별 담당자가 결과물을 만들고 검토하는 회사를 설계합니다. 게임뿐 아니라 웹 도구, 자동화, 데이터 분석 서비스, 디지털 상품을 사업 대상으로 합니다. 수익은 실제 고객·거래 증거로 확인하며 가상 수치와 구분합니다.
+Windows에서 최신 코드를 받은 뒤:
 
-## 프로젝트 기록
-- [회사 및 운영 설계](docs/COMPANY.md)
-- [직무별 설계](docs/ROLES.md)
-- [시스템 및 데이터 설계](docs/ARCHITECTURE.md)
-- [결정 기록](docs/DECISIONS.md)
-- [개발 계획](docs/ROADMAP.md)
-- [작업 기록](docs/WORKLOG.md)
+1. `install-office.bat` 실행 (최초 1회).
+2. `npm install -g @openai/codex` → `codex login`으로 ChatGPT 로그인.
+3. `start-office.bat` 실행 → 사무실에서 **출근** → **업무 지시**.
 
-설계·결정·구현·검증 결과는 이 저장소에 기록합니다. 비밀 키, 비밀번호, 개인정보, 고객 비공개 자료와 실행 원본 로그는 공개 저장소에 올리지 않습니다. 이를 제외한 작업 경과를 비식별화해 남깁니다.
+Python 3.10 이상과 Node.js가 필요합니다. [설치·운영·오류 해결 안내](docs/AI_SETUP.md).
 
-## 배포
-main 변경 → GitHub Actions 검사 → GitHub Pages 배포.
-처음에는 Settings → Pages → Source를 GitHub Actions로 설정해야 합니다.
-Pages는 공개 정적 화면입니다. 서버 비밀 키와 실행 권한을 보관하거나 지속 에이전트를 실행하는 용도로 사용하지 않습니다.
+[GitHub Pages 공개 사무실](https://ryemso.github.io/my_little_office/)은 PC 실행 사무실로 들어가는 입구입니다. 실제 앱은 `http://127.0.0.1:8501`에서 열립니다. Pages에서 Python을 실행하지 않습니다.
 
-## 로컬 확인
-`python3 -m http.server 8000 --directory site` 실행 후 http://localhost:8000 에 접속합니다.
+## 현재 기능
+
+- 오리지널 2D 픽셀 아바타와 직무별 명령 입력.
+- SQLite 영구 대기열, 단일 작업 실행, 결과·추가 지시·검토 완료.
+- 출퇴근, 하루 5시간 근무 구간 2회, 중단·오류·한도 대기·재시작 복구.
+- 업무 기록 다운로드, 선택한 공개 기록의 GitHub 동기화.
+
+현재 Codex는 **문서·코드 초안**을 제출합니다. 제품 파일 수정·테스트 실행·외부 발송·배포는 후속 단계입니다. 실제 Codex 구독 로그인 실행과 Windows 환경은 사용자 PC에서 최종 확인해야 합니다.
+
+## 목적과 기록
+
+게임뿐 아니라 웹 도구, 자동화, 데이터 분석 서비스, 디지털 상품을 사업 대상으로 합니다. 대표의 목표를 직무별 업무로 구체화하고 실제 결과를 검토합니다. 수익은 실제 고객·거래 증거로 확인합니다.
+
+- [회사 및 운영](docs/COMPANY.md) · [직무](docs/ROLES.md)
+- [직접 명령 설계](docs/DIRECT_OFFICE_DESIGN.md) · [시스템](docs/ARCHITECTURE.md)
+- [결정 기록](docs/DECISIONS.md) · [개발 계획](docs/ROADMAP.md) · [작업 기록](docs/WORKLOG.md)
+
+코드·설계·개발 이력은 이 저장소에 보관합니다. 인증 정보·원문 실행 로그·고객 비공개 자료는 공개하지 않습니다.
+
+## 검증과 배포
+
+```bash
+python -m pip install -r requirements.txt
+python -m unittest discover -s scripts/tests -v
+node --check site/app.js
+python scripts/check_site.py
+```
+
+main 변경 → GitHub Actions 검사 → GitHub Pages 공개 사무실 배포. Streamlit 앱은 PC에서 실행합니다. 실제 Codex 호출 없이 모의 응답으로 UI·상태 전이를 테스트합니다.
