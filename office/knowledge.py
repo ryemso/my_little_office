@@ -33,7 +33,7 @@ def save_profile(store,text):
 
 def import_profile(store,data):
     value=json.loads(data)
-    if value.get('format')!='my-little-office-profile-v1' or not isinstance(value.get('profile'),str):
+    if not isinstance(value,dict) or value.get('format')!='my-little-office-profile-v1' or not isinstance(value.get('profile'),str):
         raise ValueError('사무실 초기 프로필 JSON 형식이 아닙니다.')
     save_profile(store,value['profile'])
 
@@ -74,7 +74,7 @@ def link(store,url,project_id=None,scope='task'):
 
 
 def inline_links(text):
-    return list(dict.fromkeys(re.findall(r'https?://[^\s<>\[\]"\']+',text)))[:5]
+    return list(dict.fromkeys(url.rstrip(').,;!?。') for url in re.findall(r'https?://[^\s<>\[\]"\']+',text)))[:5]
 
 
 def snapshot(store,prompt,project_id=None,selected=()):

@@ -75,6 +75,8 @@ class KnowledgeTests(unittest.TestCase):
         self.assertEqual(readers.normalize_url('https://github.com/ryemso/my_little_office'),'https://raw.githubusercontent.com/ryemso/my_little_office/HEAD/README.md')
 
     def test_profile_import_and_project_isolation(self):
+        with self.assertRaises(ValueError):knowledge.import_profile(self.store,'[]')
+        self.assertEqual(knowledge.inline_links('(https://example.org/notes).'),['https://example.org/notes'])
         knowledge.import_profile(self.store,json.dumps({'format':'my-little-office-profile-v1','profile':'대표의 검증된 초기 경험'}))
         self.assertIn('초기 경험',knowledge.profile(self.store))
         identifier=knowledge.upload(self.store,'private.txt',b'private',project_id='other')
