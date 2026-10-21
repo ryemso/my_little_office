@@ -25,8 +25,8 @@ class StreamlitUITests(unittest.TestCase):
                 self.assertNotIn('오늘 근무 구간', [m.label for m in app.metric])
                 self.assertNotIn('남은 시간', [m.label for m in app.metric])
                 next(b for b in app.button if b.label=='출근 / 근무 재개').click().run()
-                app.selectbox[0].select('dev')
-                app.text_area[0].input('모바일 첫 화면 개선안을 작성해줘')
+                next(s for s in app.selectbox if s.label=='담당 직원').select('dev')
+                next(s for s in app.text_area if s.label=='업무 지시').input('모바일 첫 화면 개선안을 작성해줘')
                 next(b for b in app.button if b.label=='업무 지시').click().run()
                 for _ in range(30):
                     if instances[0].store.tasks() and instances[0].store.tasks()[0]['status']=='review':break
@@ -39,7 +39,7 @@ class StreamlitUITests(unittest.TestCase):
                 next(b for b in app.button if b.label=='업무 지시').click().run()
                 self.assertEqual(len(instances[0].store.tasks()),1)
                 next(b for b in app.button if b.label=='추가 지시 / 다시 진행').click().run()
-                app.text_area[0].input('그 개선안에 대한 코드 초안을 작성해줘')
+                next(s for s in app.text_area if s.label=='업무 지시').input('그 개선안에 대한 코드 초안을 작성해줘')
                 next(b for b in app.button if b.label=='업무 지시').click().run()
                 self.assertEqual(len(instances[0].store.tasks()),2)
                 self.assertTrue(instances[0].store.tasks()[0]['parent'])
@@ -71,7 +71,7 @@ class StreamlitUITests(unittest.TestCase):
             try:
                 app=AppTest.from_file(str(Path(__file__).resolve().parents[2]/'streamlit_app.py')).run(timeout=15)
                 next(b for b in app.button if b.label=='출근 / 근무 재개').click().run()
-                app.text_area[0].input('기능을 기획하고 코드 초안을 만든 뒤 최종 보고해줘')
+                next(s for s in app.text_area if s.label=='업무 지시').input('기능을 기획하고 코드 초안을 만든 뒤 최종 보고해줘')
                 next(b for b in app.button if b.label=='업무 지시').click().run()
                 root=next(t for t in instances[0].store.tasks() if t['kind']=='plan')
                 for _ in range(60):

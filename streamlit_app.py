@@ -8,6 +8,7 @@ import streamlit.components.v1 as components
 from office.engine import Worker, require_login
 from office.store import Store
 from office.sync import publish
+from office.workspaces import Workspace
 from scripts.local_office import ROLES, STATE
 
 st.set_page_config(page_title='My Little Office · 출근 사무실', page_icon='🏡', layout='wide')
@@ -26,6 +27,7 @@ except (RuntimeError, OSError) as error:
     st.stop()
 
 scene = components.declare_component('pixel_office', path=str(Path(__file__).parent / 'office/component'))
+store.company_project()
 st.session_state.setdefault('selected_role', 'lead')
 st.session_state.setdefault('request_id', str(uuid.uuid4()))
 st.session_state.setdefault('parent_task', None)
@@ -64,7 +66,9 @@ def live_office():
 
 live_office()
 st.subheader('직원에게 업무 지시')
-st.caption('총괄 자동 배정은 최대 6개 직원 업무와 최종 보고를 순서대로 실행합니다. 현재 실행 범위: 문서·코드 초안 작성. 프로젝트 파일 수정·테스트 실행은 다음 단계입니다. 업무와 결과는 PC에 저장됩니다.')
+st.caption('총괄이 개발·수정·테스트·문서·홍보·배포 업무를 배정합니다. 선택한 프로젝트에서 실제 파일을 만들고 명령을 실행하며, 게시·배포는 연결된 실행 작업을 사용합니다.')
+projects={p['id']:p for p in store.projects()}
+project_id=st.selectbox('업무 프로젝트', list(projects), format_func=lambda value:projects[value]['name'], key='project_choice')
 if st.session_state.parent_task:
     original = store.get(st.session_state.parent_task)
     st.info('이전 업무를 이어서 지시합니다: ' + original['prompt'][:100])
@@ -79,10 +83,10 @@ with st.form('new_task', clear_on_submit=False):
 if submitted:
     try:
         auto_team = role == 'lead' and delegate
-        signature = (role, prompt.strip(), st.session_state.parent_task, auto_team)
+        signature = (role, prompt.strip(), st.session_state.parent_task, auto_team, project_id)
         previous = st.session_state.get('last_submission')
         request_id = previous[1] if previous and previous[0] == signature else st.session_state.request_id
-        identifier = store.submit(role, prompt, request_id, st.session_state.parent_task, delegate=auto_team)
+        identifier = store.submit(role, prompt, request_id, st.session_state.parent_task, delegate=auto_team, project_id=project_id)
         st.session_state.last_submission = (signature, identifier)
         st.session_state.request_id = str(uuid.uuid4())
         st.success('PC에 업무를 접수했습니다. 직원이 순서대로 처리합니다.')
@@ -94,7 +98,7 @@ if st.button('같은 내용으로 새 업무 준비'):
     st.session_state.request_id = str(uuid.uuid4())
     st.info('다음 업무 지시는 새 업무로 접수합니다.')
 
-LABELS = {'delegating':'총괄 진행 관리', 'blocked':'팀 업무 중단', 'queued':'대기', 'running':'작업 중', 'review':'검토 대기', 'completed':'완료', 'failed':'실패', 'interrupted':'중단', 'cancelled':'취소', 'cancel_requested':'중단 요청 중', 'quota_wait':'한도 대기'}
+LABELS = {'awaiting_approval':'게시·배포 승인 대기', 'delegating':'총괄 진행 관리', 'blocked':'팀 업무 중단', 'queued':'대기', 'running':'작업 중', 'review':'검토 대기', 'completed':'완료', 'failed':'실패', 'interrupted':'중단', 'cancelled':'취소', 'cancel_requested':'중단 요청 중', 'quota_wait':'한도 대기'}
 
 def task_label(task):
     if task['kind'] in ('employee', 'report') and task['status'] == 'review':
@@ -108,7 +112,7 @@ def task_board():
     if not tasks:
         st.info('아직 접수한 업무가 없습니다. 출근 후 위에서 첫 업무를 지시하세요.')
     for task in tasks:
-        with st.expander(f"{ROLES[task['role']]} · {task_label(task)} · {task['prompt'][:48]}", expanded=task['status'] in ('running', 'delegating', 'review', 'failed', 'blocked', 'quota_wait')):
+        with st.expander(f"{ROLES[task['role']]} · {task_label(task)} · {task['prompt'][:48]}", expanded=task['status'] in ('running', 'delegating', 'review', 'failed', 'blocked', 'quota_wait', 'awaiting_approval')):
             st.text(task['prompt'])
             st.caption('업무 ID: ' + task['id'])
             if task['kind'] == 'plan':
@@ -119,10 +123,38 @@ def task_board():
                 st.caption('총괄 배정 업무 · ' + ('최종 보고' if task['kind'] == 'report' else str(task['ordinal']) + '번째 직원 작업'))
             if task['error']:
                 st.warning(task['error'])
+            evidence=json.loads(task.get('evidence_json') or '{}')
+            if evidence:
+                st.json(evidence, expanded=False)
+            if task.get('action_json'):
+                action=json.loads(task['action_json'])
+                st.write('연결 작업: '+action['name']+' · 대상: '+action['target'])
+                st.code(action['argv'],language='json')
+                if task['status']=='awaiting_approval' and st.button('이 내용으로 실행 승인',key='approve-'+task['id']):
+                    try:
+                        workspace=Workspace(store,task);workspace.prepare()
+                        store.approve(task['id'],workspace.fingerprint())
+                        st.rerun(scope='fragment')
+                    except ValueError as error:st.error(str(error))
+            if task.get('project_id') and not task.get('root_id'):
+                workspace=Workspace(store,task)
+                if workspace.meta.exists():
+                    st.caption('실제 작업 폴더: '+str(workspace.work))
+                    changes=workspace.changes()
+                    if changes:st.dataframe(changes,hide_index=True,use_container_width=True)
+                    if task['status'] in ('review','completed','blocked','failed','interrupted'):
+                        st.download_button('프로젝트 결과 ZIP',workspace.archive(),file_name='office-project.zip',key='zip-'+task['id'])
+                        if changes:
+                            st.code(workspace.preview(),language='diff')
+                            if task['status'] in ('review','completed') and st.button('변경 파일을 원본에 반영',key='apply-'+task['id']):
+                                try:
+                                    count=workspace.apply();st.success(f'{count}개 파일을 반영했습니다. 실행 중인 앱 코드라면 재시작하세요.')
+                                except (ValueError,OSError) as error:st.error(str(error))
+
             if task['output']:
                 st.text(task['output'])
                 st.download_button('결과 다운로드', task['output'], file_name=f"office-{task['id']}.md", key='download-'+task['id'])
-            if task['status'] in ('queued', 'running', 'delegating'):
+            if task['status'] in ('queued', 'running', 'delegating', 'awaiting_approval'):
                 if st.button('업무 중단', key='cancel-'+task['id']):
                     store.cancel(task['id']); st.rerun(scope='fragment')
             elif task['status'] != 'cancel_requested':
@@ -153,3 +185,32 @@ with st.expander('최초 설정 · 사용 안내'):
 with st.expander('업데이트 후 실행'):
     st.write('사무실 실행 터미널을 종료한 뒤 프로젝트 폴더의 update-office.bat을 실행하세요. 최신 코드를 받고 사무실을 엽니다. 가상환경과 업무 DB는 유지됩니다.')
     st.caption('이번 버전을 한 번 받은 뒤부터 사용 가능합니다. 직접 수정한 코드가 있으면 덮어쓰지 않고 중단합니다.')
+
+with st.expander('프로젝트·배포·홍보 연결 관리'):
+    st.write('새 결과물은 회사 작업실에 만듭니다. 기존 코드나 자료를 다루려면 해당 프로젝트 폴더를 등록하세요.')
+    with st.form('register-project'):
+        project_name=st.text_input('프로젝트 이름')
+        project_path=st.text_input('PC 프로젝트 폴더 경로')
+        network=st.checkbox('이 프로젝트의 네트워크 사용 허용 (패키지 설치·외부 자료 접근)')
+        if st.form_submit_button('프로젝트 등록'):
+            try:
+                store.register_project(project_name,project_path,network=network);st.rerun()
+            except (ValueError,OSError) as error:st.error(str(error))
+    st.write('배포·홍보 게시 등 외부 실행은 이미 PC에서 로그인한 도구나 프로젝트 스크립트를 연결합니다. 명령 인자는 JSON 배열로 등록하며 비밀 키를 넣지 마세요.')
+    with st.form('register-action'):
+        action_project=st.selectbox('연결할 프로젝트',list(projects),format_func=lambda value:projects[value]['name'])
+        action_name=st.text_input('작업 이름',placeholder='예: 미리보기 배포, 공식 채널 게시')
+        action_target=st.text_input('실제 배포·게시 대상',placeholder='예: 내 서비스의 미리보기 환경 / 운영 중인 채널 이름')
+        action_args=st.text_area('실행 인자 JSON',placeholder='["npm", "run", "deploy:preview"]')
+        automatic=st.checkbox('이 작업의 자동 실행을 미리 허용 (총괄 배정 후 별도 승인 생략)')
+        if st.form_submit_button('실행 작업 연결'):
+            try:
+                store.register_action(action_project,action_name,action_target,json.loads(action_args),automatic=automatic);st.rerun()
+            except (ValueError,TypeError) as error:st.error(str(error))
+    with st.form('project-network'):
+        network_enabled=st.checkbox('선택한 프로젝트의 네트워크 사용',value=bool(projects[project_id]['network']))
+        if st.form_submit_button('네트워크 설정 저장'):
+            store.set_project_network(project_id,network_enabled);st.rerun()
+    selected_actions=store.actions(project_id)
+    for action in selected_actions:
+        st.caption(action['name']+' → '+action['target']+(' · 자동 실행 허용' if action['automatic'] else ' · 실행 전 승인'))

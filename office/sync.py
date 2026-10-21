@@ -7,7 +7,7 @@ def publish(tasks):
     records = []
     for task in tasks:
         # Only settled records. A queued public record must not trigger the legacy worker.
-        if task['status'] in ('queued', 'running', 'cancel_requested', 'delegating'):
+        if task['status'] in ('queued', 'running', 'cancel_requested', 'delegating', 'awaiting_approval'):
             continue
         records.append(dict(id='streamlit-'+task['id'], role=task['role'], role_name=ROLES[task['role']],
                             prompt=task['prompt'], status=task['status'], output=task['output'],
