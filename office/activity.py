@@ -34,7 +34,7 @@ class Activity:
     def activity_board(self,now=None):
         now=time.time() if now is None else now
         with self.connect() as con:
-            rows=con.execute('''SELECT t.*,a.state AS observed_state,a.detail AS observed_detail,
+            rows=con.execute('''SELECT t.id,t.role,t.status,t.updated,a.state AS observed_state,a.detail AS observed_detail,
                 a.heartbeat,a.observed FROM tasks t LEFT JOIN activity a ON a.task_id=t.id
                 ORDER BY CASE WHEN t.status IN ('running','cancel_requested') THEN 0
                 WHEN t.status='awaiting_approval' THEN 1 WHEN t.status='queued' THEN 2 ELSE 3 END,t.updated DESC''').fetchall()
@@ -66,7 +66,7 @@ class Activity:
         start=datetime.combine(day,datetime.min.time(),KST).timestamp()
         end=datetime.combine(day+timedelta(days=1),datetime.min.time(),KST).timestamp()
         with self.connect() as con:
-            rows=[dict(row) for row in con.execute('''SELECT t.id,t.role,t.prompt,t.status,t.updated,t.evidence_json FROM tasks t
+            rows=[dict(row) for row in con.execute('''SELECT t.id,t.role,t.prompt,t.status,t.updated FROM tasks t
                 WHERE t.updated>=? AND t.updated<? AND t.root_id IS NULL ORDER BY t.updated''',(start,end))]
             messages=con.execute('SELECT COUNT(*) FROM messages WHERE created>=? AND created<?',(start,end)).fetchone()[0]
         return {'day':day.isoformat(),'tasks':rows,'messages':messages,
