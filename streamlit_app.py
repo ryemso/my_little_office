@@ -38,7 +38,7 @@ pending_role = st.session_state.pop('pending_role', None)
 if pending_role in ROLES:
     st.session_state.selected_role = pending_role
 st.title('🏡 My Little Office')
-st.caption('내 PC에서 출근하는 작은 AI 회사 · 직원에게 직접 지시하고 같은 사무실에서 결과를 받으세요.')
+st.caption('v0.15 · 내 PC에서 출근하는 작은 AI 회사 · 직원에게 직접 지시하고 같은 사무실에서 결과를 받으세요.')
 
 @st.fragment(run_every='2s')
 def live_office():

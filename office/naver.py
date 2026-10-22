@@ -84,7 +84,7 @@ def open_editor(page,blog):
 
 def editor_matches(page,post):
     title=page.locator(TITLE).inner_text()
-    body='\n'.join(page.locator(BODY).all_text_contents())
+    body='\n'.join(page.locator(BODY).all_inner_texts())
     return normalize(title)==normalize(post['title']) and normalize(body)==normalize(post['body'])
 
 
@@ -196,11 +196,16 @@ def run_editor(page,root,work,blog,name,mode,task_id,checkpoint=lambda:None):
     return receipt
 
 
-def execute(store,task,workspace,argv,end):
+def _execute_browser(store,task,workspace,argv,end):
     if len(argv) not in (4,5):raise ValueError('네이버 연결 인자 오류')
     _,blog,name,mode=argv[:4]
+    approved_fingerprint=workspace.fingerprint()
+    action=json.loads(task['action_json'])
+    if not action['automatic'] and approved_fingerprint!=task.get('approval_hash'):
+        raise ValueError('승인 이후 파일이 바뀌었습니다. 다시 검토하세요.')
     def checkpoint():
         if time.time()>=end or store.get(task['id'])['status']=='cancel_requested':raise RuntimeError('네이버 작업 중단 요청')
+        if workspace.fingerprint()!=approved_fingerprint:raise RuntimeError('네이버 실행 중 승인 원문이 변경됐습니다. 다시 검토하세요.')
     try:from playwright.sync_api import sync_playwright
     except ImportError:raise RuntimeError('업데이트로 Playwright를 설치한 뒤 브라우저 실행 준비 버튼을 누르세요.') from None
     with profile_lock(store.root),sync_playwright() as playwright:
@@ -224,6 +229,35 @@ def execute(store,task,workspace,argv,end):
             'error':'','evidence':{'action':{'type':'naver',**result},'changes':workspace.changes()}}
 
 
+def execute(store,task,workspace,argv,end):
+    # A separate interpreter avoids Streamlit/Tornado's Windows event-loop policy.
+    import subprocess
+    import sys
+    import tempfile
+    from office.engine import stop_process,safe_diagnostic
+    logs=store.root/'logs';logs.mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix='office-browser-') as directory:
+        result_file=Path(directory)/'result.json'
+        log_path=logs/('naver-'+hashlib.sha256(task['id'].encode()).hexdigest()[:24]+'.log')
+        args=[sys.executable,'-m','office.naver','run','--root',str(store.root),'--task',task['id'],
+              '--end',str(end),'--result',str(result_file)]
+        kwargs={'start_new_session':True} if os.name!='nt' else {'creationflags':subprocess.CREATE_NEW_PROCESS_GROUP}
+        env=dict(os.environ)
+        for key in ('OPENAI_API_KEY','CODEX_API_KEY'):env.pop(key,None)
+        with log_path.open('w',encoding='utf-8') as log:
+            process=subprocess.Popen(args,cwd=Path(__file__).resolve().parents[1],env=env,stdout=log,stderr=subprocess.STDOUT,**kwargs)
+            try:
+                while process.poll() is None:
+                    if time.time()>=end or store.get(task['id'])['status']=='cancel_requested' or log_path.stat().st_size>8_000_000:
+                        stop_process(process)
+                        return {'status':'interrupted','error':'네이버 작업을 중단했습니다. 이미 요청된 발행 결과는 네이버에서 확인하세요.'}
+                    time.sleep(.2)
+            finally:
+                if process.poll() is None:stop_process(process)
+        if result_file.is_file():return json.loads(result_file.read_text(encoding='utf-8'))
+        raise RuntimeError('네이버 브라우저 실행 실패: '+safe_diagnostic(log_path.read_text(encoding='utf-8',errors='replace'))[-1500:]+' · 진단 파일: '+str(log_path))
+
+
 def login(root,blog):
     """The user signs in normally in a dedicated local browser, without exporting sessions."""
     from playwright.sync_api import sync_playwright
@@ -244,5 +278,22 @@ def login(root,blog):
 
 if __name__=='__main__':
     import argparse
-    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['login']);parser.add_argument('--root',required=True);parser.add_argument('--blog',required=True)
-    args=parser.parse_args();login(args.root,args.blog)
+    parser=argparse.ArgumentParser();parser.add_argument('command',choices=['login','run']);parser.add_argument('--root',required=True);parser.add_argument('--blog');parser.add_argument('--task');parser.add_argument('--end',type=float);parser.add_argument('--result')
+    args=parser.parse_args()
+    if args.command=='login':
+        if not args.blog:parser.error('--blog required')
+        login(args.root,args.blog)
+    else:
+        if not args.task or args.end is None or not args.result:parser.error('--task, --end, --result required')
+        from office.store import Store
+        from office.workspaces import Workspace
+        from office.engine import exception_result
+        store=Store(args.root)
+        try:
+            task=store.get(args.task)
+            if not task or task['status']!='running':raise ValueError('실행 중인 업무가 아닙니다.')
+            workspace=Workspace(store,task);project=workspace.prepare()
+            if not project or not project.get('network'):raise ValueError('네트워크 사용 프로젝트가 필요합니다.')
+            result=_execute_browser(store,task,workspace,json.loads(json.loads(task['action_json'])['argv']),args.end)
+        except Exception as error:result=exception_result(store,error)
+        Path(args.result).write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')

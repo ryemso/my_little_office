@@ -41,6 +41,10 @@ def main():
             assert reused['state']=='published'
             assert page.evaluate("localStorage.getItem('publishCount')")=='1','duplicate publication'
             print('Real Chromium fixture: input, save/reopen, publication, article verification, duplicate prevention passed')
+        except Exception:
+            print('Fixture title:',repr(page.locator('.se-title-text p').all_inner_texts()))
+            print('Fixture body:',repr(page.locator('.se-section-text p').all_inner_texts()))
+            raise
         finally:context.close();browser.close()
 
 if __name__=='__main__':main()

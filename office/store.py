@@ -218,6 +218,10 @@ class Store(Conversations,Decisions,Schedules):
                         con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                                     (str(uuid.uuid4()), 'lead', '직원들의 제출물을 검토하고 대표에게 최종 결과와 남은 문제를 보고하세요.', 'queued', now, now, 'report', old['root_id'], ordinal, old['project_id'], old['context_json']))
 
+            if result['status'] not in ('review','completed'):
+                scheduled_root=old['root_id'] or identifier
+                con.execute("UPDATE schedules SET enabled=0,error=? WHERE last_task=?",('업무 실패·중단으로 예약을 정지했습니다. 결과 확인 후 재개하세요.',scheduled_root))
+
     def complete(self, identifier):
         with self.connect() as con:
             updated=con.execute("UPDATE tasks SET status='completed',updated=? WHERE id=? AND status='review'", (time.time(), identifier))
