@@ -313,6 +313,17 @@ with st.expander('프로젝트·배포·홍보 연결 관리'):
                 store.register_project(project_name,project_path,network=network);st.rerun()
             except (ValueError,OSError) as error:st.error(str(error))
     st.write('배포·홍보 게시 등 외부 실행은 이미 PC에서 로그인한 도구나 프로젝트 스크립트를 연결합니다. 명령 인자는 JSON 배열로 등록하며 비밀 키를 넣지 마세요.')
+    with st.form('register-github-publisher'):
+        github_repo=st.text_input('결과를 받을 GitHub 저장소',placeholder='owner/repository')
+        st.caption('대표 승인 후 변경 파일만 office/ 전용 브랜치에 올립니다. 기본 브랜치 병합·배포는 별도입니다. 이 PC의 gh 로그인을 사용합니다.')
+        if st.form_submit_button('GitHub 결과 반영 기능 연결'):
+            try:
+                from office.github_publish import repository
+                repo=repository(github_repo.strip())
+                store.register_action(project_id,'GitHub 결과 브랜치 생성','https://github.com/'+repo,
+                                      ['office:github',repo],automatic=False)
+                st.success('연결했습니다. 총괄에게 결과를 GitHub에 반영하도록 지시하면 대표 승인함에서 확인할 수 있습니다.')
+            except (ValueError,OSError) as error:st.error(str(error))
     with st.form('register-action'):
         action_project=st.selectbox('연결할 프로젝트',list(projects),format_func=lambda value:projects[value]['name'])
         action_name=st.text_input('작업 이름',placeholder='예: 미리보기 배포, 공식 채널 게시')

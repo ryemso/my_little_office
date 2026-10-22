@@ -23,12 +23,20 @@ def executable(argv):
 
 def run_action(store,task,end):
     from office.engine import stop_process
-    workspace=Workspace(store,task);workspace.prepare()
+    workspace=Workspace(store,task);project=workspace.prepare()
     action=json.loads(task['action_json'])
     if not action['automatic'] and workspace.fingerprint()!=task.get('approval_hash'):
         return {'status':'failed','error':'승인 이후 작업 파일이 바뀌었습니다. 변경을 확인한 뒤 다시 지시하세요.'}
     store.message(task['id'],'action-start',task['role'],'status','연결 작업을 실행합니다.\n작업: '+action['name']+'\n대상: '+action['target'])
     argv=json.loads(action['argv'])
+    if argv[0]=='office:github':
+        if len(argv)!=2:raise ValueError('GitHub 연결 인자 오류')
+        if not project or not project.get('network'):raise ValueError('프로젝트 네트워크 사용을 허용해야 GitHub에 반영할 수 있습니다.')
+        from office.github_publish import publish_workspace
+        receipt=publish_workspace(workspace,argv[1],task['id'],end,
+                                  cancelled=lambda:store.get(task['id'])['status']=='cancel_requested')
+        return {'status':'review','output':'GitHub 원격 커밋 확인 완료\n'+receipt['url']+'\n브랜치: '+receipt['branch'],
+                'error':'','evidence':{'action':{'type':'github_branch_publish',**receipt},'changes':workspace.changes()}}
     args=executable(argv)
     env=dict(os.environ)
     for key in ('OPENAI_API_KEY','CODEX_API_KEY'):env.pop(key,None)
