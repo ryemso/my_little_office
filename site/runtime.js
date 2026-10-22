@@ -7,6 +7,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const roleNames={lead:'총괄',plan:'기획·사업개발',dev:'개발',design:'디자인·콘텐츠',market:'마케팅·영업',data:'데이터·운영'};
 const options=()=>Object.entries(roleNames).map(([id,label])=>`<option value="${id}">${label}</option>`).join('');
 let endpoint='http://127.0.0.1:8501',secret='',snapshot=null,channel='',project='',sources=[],busy=false,requestId=crypto.randomUUID(),lastDecision=null;
+if(['127.0.0.1','localhost'].includes(location.hostname))endpoint=location.origin;
 const fragment=new URLSearchParams(location.hash.slice(1));secret=fragment.get('bridge')||'';
 if(fragment.has('bridge'))history.replaceState(null,'',location.pathname+location.search);
 function connectionUI(){panel.onclick=null;panel.onsubmit=null;panel.innerHTML=`<h2>웹 사무실 · PC 실행기 연결</h2><p>PC에서 start-office.bat을 실행하세요. 같은 화면을 Pages 또는 PC에서 사용할 수 있습니다.</p><form id="bridge-connect"><label>PC 실행기 주소 <input name="endpoint" value="${esc(endpoint)}" required></label><label>연결 코드 <input name="secret" type="password" autocomplete="off" required></label><button>연결</button></form><p id="connection-error" role="status"></p><p>연결 코드는 PC의 MyLittleOffice/web-connection.txt에 있으며 실행기를 다시 켜면 바뀝니다. 코드를 GitHub에 올리지 마세요.</p><a href="http://127.0.0.1:8501/" target="_blank" rel="noopener">PC에서 같은 사무실 열기 ↗</a><p>Pages에서 브라우저의 로컬 네트워크 접근 요청이 나타나면 허용해야 연결됩니다. 브라우저가 연결을 막으면 PC 사무실을 사용하세요.</p>`;
