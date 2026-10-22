@@ -18,6 +18,8 @@ class AccessTests(unittest.TestCase):
             store.submit('lead','결과를 검토하고 보완 문서를 작성해줘',project_id=project)
             task=store.claim();task['kind']='report'
             def fake(args,**kwargs):
+                self.assertEqual(args[args.index('--cd')+1],kwargs['cwd'])
+                self.assertTrue(Path(kwargs['cwd']).is_absolute())
                 self.assertNotIn('--ignore-user-config',args)
                 self.assertIn('workspace-write',args)
                 self.assertIn('features.shell_tool=true',args)
@@ -38,6 +40,10 @@ class AccessTests(unittest.TestCase):
             self.assertTrue(any(change['path']=='review.md' for change in result['evidence']['changes']))
             self.assertNotIn('fixture-github-token',json.dumps(result))
             self.assertEqual(result['evidence']['environment']['connected_tools'],'local Codex user config')
+            context=result['evidence']['environment']['project']
+            self.assertTrue(context['registered'])
+            self.assertEqual(context['file_count'],0)
+            self.assertFalse(context['git_metadata_copied'])
             self.assertEqual(len(result['evidence']['external_tools']),2)
             self.assertNotIn('private-secret',str(result['evidence']))
             messages=store.transcript(task['id'])

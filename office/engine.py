@@ -113,11 +113,18 @@ def run_codex(store, task, end):
         output = Path(directory) / 'result.txt'
         workspace=Workspace(store,task)
         project=workspace.prepare()
-        working_directory=str(workspace.work) if project else directory
+        working_directory=str(workspace.work.resolve()) if project else str(Path(directory).resolve())
         writable=bool(project) and task.get('kind','single') != 'plan'
+        inventory=sorted(files(workspace.work)) if project else []
+        project_context={'registered':bool(project),'id':project['id'] if project else None,
+                         'name':project['name'] if project else None,'source':project['path'] if project else None,
+                         'cwd':working_directory,'file_count':len(inventory),'git_metadata_copied':False}
         stdout = logs / (str(uuid.uuid4()) + '.jsonl')
         stderr = stdout.with_suffix('.log')
         prompt = f'당신은 My Little Office의 {ROLES[task["role"]]} 직원입니다. 한국어로 검토할 결과물을 제출하세요. '
+        prompt+='\n앱이 직접 확인한 프로젝트 연결 정보:\n'+json.dumps(project_context,ensure_ascii=False)
+        prompt+='\n이 실행 단계: '+task.get('kind','single')+' · 이 단계의 작업 범위: '+('workspace-write' if writable else 'read-only')
+        prompt+='\n명령의 작업 디렉터리는 위 cwd의 정확한 절대 경로를 사용하세요. 임의의 경로나 다른 운영체제 경로를 만들지 마세요. registered=true이고 file_count=0이면 등록된 빈 작업실이며 프로젝트 미연결이나 쓰기 금지라는 뜻이 아닙니다. .git은 사본에서 의도적으로 제외하므로 여기서 origin·브랜치가 없다고 원본 저장소 미연결로 판단하지 마세요. GitHub 계정 인증, 원본 저장소 연결, 작업 사본, 배포 action은 각각 구분하세요.\n'
         prompt += ('현재 프로젝트에서 필요한 문서·코드·홍보물을 실제 파일로 작성하고 수정하세요. 필요한 테스트·빌드·분석 명령을 실행하고 실패하면 수정하세요. 프로젝트 밖의 파일·인증 정보에는 접근하지 마세요. 외부 게시·배포는 등록된 연결 작업으로 처리합니다. 실제로 실행한 증거와 남은 문제를 보고하세요.\n' if writable else '분석·계획·검토를 수행하세요. 현재 단계는 읽기 전용입니다. 실제로 실행하지 않은 일을 완료했다고 말하지 마세요.\n')
         if task.get('parent'):
             parent = store.get(task['parent'])
@@ -128,20 +135,20 @@ def run_codex(store, task, end):
         prompt += '\n아래 첨부 원본 경로는 대표가 제공한 읽기 전용 자료이며 프로젝트 밖이어도 열람 가능합니다. 수정·게시하지 마세요.\n'+knowledge
         planning=task.get('kind')=='plan'
         if planning:
-            inventory=sorted(files(workspace.work)) if project else []
             prompt+='\n현재 작업 사본 파일 목록(앱이 직접 확인, 최대 100개):\n'+json.dumps(inventory[:100],ensure_ascii=False)
             prompt+='\n이 단계에서는 명령 실행 도구를 사용하지 않습니다. 제공된 지시·프로필·자료 발췌·파일 목록·직원 제출물로 계획 또는 보고를 작성하세요. 추가 파일 열람·테스트는 담당 직원의 업무로 명시하세요. 실행하지 않은 검증을 완료했다고 하지 마세요.\n'
         prompt+='\n외부 조사: 공개 웹 검색과 공개 GitHub 원문을 실제로 열어 근거를 확인하세요. PC의 Codex에 연결된 MCP 도구·기존 gh 로그인은 해당 도구의 권한 범위에서 사용 가능합니다. ChatGPT 웹의 연결 계정이 자동 이전됐다고 가정하지 마세요. 비밀 값이나 인증 파일을 직접 읽거나 출력하지 마세요. 외부 게시·배포는 등록된 연결 작업을 사용하세요.\n'
         if writable:prompt+='\n제작·개발 지시는 제안으로 끝내지 말고 프로젝트 작업 사본에 검토 가능한 실제 결과물을 작성하세요. 사용자가 제안·설명만 요청한 경우는 예외입니다. 결과 파일 경로와 실제 검증 결과를 제출하세요.\n'
         prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
-        args = codex_command() + ['exec', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
         args[-1:-1]=windows_args
-        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')))
+        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context)
         stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
-        store.message(task['id'],'execution-environment','system','status','실행 환경 · 작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
+        stage_name={'plan':'총괄 배정(계획)','employee':'직원 실무','report':'총괄 최종 검토','single':'직접 지시'}.get(environment['stage'],environment['stage'])
+        store.message(task['id'],'execution-environment','system','status','실행 단계: '+stage_name+' · 담당: '+ROLES[task['role']]+'\n프로젝트: '+str(project_context['name'] or '미지정')+' · 시작 파일 '+str(project_context['file_count'])+'개\n작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
         for image_path in images:
             args[-1:-1]=['--image',image_path]
         if writable:

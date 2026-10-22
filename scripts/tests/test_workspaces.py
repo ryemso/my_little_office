@@ -14,6 +14,12 @@ from office.engine import run_codex,Worker
 from office.actions import run_action
 
 class WorkspaceTests(unittest.TestCase):
+    def test_inaccessible_walk_is_not_silently_treated_as_empty(self):
+        def denied_walk(*args,**kwargs):
+            kwargs['onerror'](PermissionError('fixture access denied'))
+            return iter(())
+        with patch('office.workspaces.os.walk',side_effect=denied_walk):
+            with self.assertRaises(PermissionError):files(self.source)
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.base=Path(self.temp.name)
         self.store=Store(self.base/'state');self.source=self.base/'project';self.source.mkdir()

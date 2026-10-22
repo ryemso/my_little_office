@@ -15,11 +15,15 @@ SENSITIVE = {'.npmrc','.pypirc','.netrc','secrets.toml','auth.json'}
 LIMIT = 50_000_000
 
 
+def walk_error(error):
+    raise error
+
+
 def files(root):
     root = Path(root)
     found = {}
     total = 0
-    for folder, dirs, names in os.walk(root, followlinks=False):
+    for folder, dirs, names in os.walk(root, followlinks=False,onerror=walk_error):
         dirs[:] = [d for d in dirs if d not in IGNORED and not (Path(folder)/d).is_symlink()]
         for name in names:
             path=Path(folder)/name
