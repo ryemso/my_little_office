@@ -86,6 +86,10 @@ class LiveEvents:
                 body+='\n'+str(item.get('command',''))[:3000]
             elif kind=='agent_message' and event_type=='item.completed' and self.task.get('kind')!='plan':
                 body=str(item.get('text',''))
+            elif kind=='web_search' and event_type in ('item.started','item.completed'):
+                body=('웹 조사 시작' if event_type=='item.started' else '웹 조사 결과 수신')+'\n'+json.dumps(item.get('action',{}),ensure_ascii=False)[:2000]
+            elif kind=='mcp_tool_call' and event_type in ('item.started','item.completed'):
+                body=('연결 도구 호출 시작' if event_type=='item.started' else '연결 도구 호출 종료')+' · '+str(item.get('server',''))+' / '+str(item.get('tool',''))+' · '+str(item.get('status',''))
             else:continue
             key='live:'+str(event_type)+':'+str(item.get('id') or hashlib.sha256(line).hexdigest())
             self.store.message(self.task['id'],key,self.task['role'],'progress',safe_diagnostic(body))

@@ -35,6 +35,10 @@ class Store(Conversations):
         from office.knowledge import initialize
         initialize(self)
         self.initialize_conversations()
+        with self.connect() as con:
+            if not self._get(con,'employee_access_v1',False):
+                con.execute('UPDATE projects SET network=1')
+                self._put(con,'employee_access_v1',True)
 
     @contextmanager
     def connect(self):
@@ -235,7 +239,7 @@ class Store(Conversations):
             row=con.execute('SELECT * FROM projects WHERE id=?',(identifier,)).fetchone()
             return dict(row) if row else None
 
-    def register_project(self, name, path, network=False, identifier=None):
+    def register_project(self, name, path, network=True, identifier=None):
         path=Path(path).expanduser().resolve()
         if not name.strip() or not path.is_dir() or path==Path(path.anchor) or path==Path.home() or self.root.resolve().is_relative_to(path):
             raise ValueError('개별 프로젝트 폴더를 선택하세요. 홈·시스템·사무실 상태 폴더 전체는 사용할 수 없습니다.')

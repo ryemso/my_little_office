@@ -104,7 +104,7 @@ def run_codex(store, task, end):
         return run_action(store,task,end)
     require_login()
     env = dict(os.environ)
-    for key in ('OPENAI_API_KEY', 'CODEX_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN'):
+    for key in ('OPENAI_API_KEY', 'CODEX_API_KEY'):
         env.pop(key, None)
     logs = store.root / 'logs'
     logs.mkdir(exist_ok=True)
@@ -114,7 +114,7 @@ def run_codex(store, task, end):
         workspace=Workspace(store,task)
         project=workspace.prepare()
         working_directory=str(workspace.work) if project else directory
-        writable=bool(project) and task.get('kind','single') not in ('plan','report')
+        writable=bool(project) and task.get('kind','single') != 'plan'
         stdout = logs / (str(uuid.uuid4()) + '.jsonl')
         stderr = stdout.with_suffix('.log')
         prompt = f'당신은 My Little Office의 {ROLES[task["role"]]} 직원입니다. 한국어로 검토할 결과물을 제출하세요. '
@@ -126,24 +126,26 @@ def run_codex(store, task, end):
             prompt += '\n이전 업무: ' + parent['prompt'] + '\n이전 결과: ' + parent['output'][-20000:] + '\n'
         knowledge,images=prepare_inputs(task,workspace.directory/'inputs')
         prompt += '\n아래 첨부 원본 경로는 대표가 제공한 읽기 전용 자료이며 프로젝트 밖이어도 열람 가능합니다. 수정·게시하지 마세요.\n'+knowledge
-        planning=task.get('kind') in ('plan','report')
+        planning=task.get('kind')=='plan'
         if planning:
             inventory=sorted(files(workspace.work)) if project else []
             prompt+='\n현재 작업 사본 파일 목록(앱이 직접 확인, 최대 100개):\n'+json.dumps(inventory[:100],ensure_ascii=False)
             prompt+='\n이 단계에서는 명령 실행 도구를 사용하지 않습니다. 제공된 지시·프로필·자료 발췌·파일 목록·직원 제출물로 계획 또는 보고를 작성하세요. 추가 파일 열람·테스트는 담당 직원의 업무로 명시하세요. 실행하지 않은 검증을 완료했다고 하지 마세요.\n'
+        prompt+='\n외부 조사: 공개 웹 검색과 공개 GitHub 원문을 실제로 열어 근거를 확인하세요. PC의 Codex에 연결된 MCP 도구·기존 gh 로그인은 해당 도구의 권한 범위에서 사용 가능합니다. ChatGPT 웹의 연결 계정이 자동 이전됐다고 가정하지 마세요. 비밀 값이나 인증 파일을 직접 읽거나 출력하지 마세요. 외부 게시·배포는 등록된 연결 작업을 사용하세요.\n'
+        if writable:prompt+='\n제작·개발 지시는 제안으로 끝내지 말고 프로젝트 작업 사본에 검토 가능한 실제 결과물을 작성하세요. 사용자가 제안·설명만 요청한 경우는 예외입니다. 결과 파일 경로와 실제 검증 결과를 제출하세요.\n'
         prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
-        args = codex_command() + ['exec', '--ignore-user-config', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        args = codex_command() + ['exec', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
         args[-1:-1]=windows_args
-        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'))
+        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')))
         stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
         store.message(task['id'],'execution-environment','system','status','실행 환경 · 작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
-        if planning:args[-1:-1]=['-c','features.shell_tool=false']
         for image_path in images:
             args[-1:-1]=['--image',image_path]
-        if writable and project.get('network'):
-            args[-1:-1] = ['-c','sandbox_workspace_write.network_access=true']
+        if writable:
+            args[-1:-1] = ['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
         with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
             process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
@@ -207,7 +209,13 @@ def run_codex(store, task, end):
         commands=[{k:e['item'].get(k) for k in ('command','status','exit_code','aggregated_output')} for e in events if e.get('type')=='item.completed' and isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
         for command in commands:
             if isinstance(command.get('aggregated_output'),str):command['aggregated_output']=command['aggregated_output'][-4000:]
-        evidence={'environment':environment,'commands':commands[-40:],'changes':workspace.changes() if project else []}
+        external=[]
+        for event in events:
+            item=event.get('item',{})
+            if event.get('type')!='item.completed' or not isinstance(item,dict):continue
+            if item.get('type')=='web_search':external.append({'type':'web_search','action':safe_diagnostic(json.dumps(item.get('action',{}),ensure_ascii=False))})
+            elif item.get('type')=='mcp_tool_call':external.append({key:item.get(key) for key in ('type','server','tool','status')})
+        evidence={'environment':environment,'commands':commands[-40:],'external_tools':external[-40:],'changes':workspace.changes() if project else []}
         checks={}
         for command in commands:
             match=re.search(r'pytest|unittest|vitest|jest|npm (?:run )?test|npm run build|cargo test|go test|tsc',str(command.get('command','')))

@@ -276,11 +276,22 @@ with st.expander('업데이트 후 실행'):
     st.caption('이번 버전을 한 번 받은 뒤부터 사용 가능합니다. 직접 수정한 코드가 있으면 덮어쓰지 않고 중단합니다.')
 
 with st.expander('프로젝트·배포·홍보 연결 관리'):
+    st.write('직원과 총괄 검토는 작업 사본에 파일을 쓰고 검증합니다. 공개 웹·GitHub 원문 조사와 PC의 Codex에 등록된 연결 도구를 사용할 수 있습니다.')
+    st.caption('ChatGPT 웹의 연결 계정은 로컬 Codex로 자동 이전되지 않습니다. 비공개 저장소·외부 계정은 해당 PC에서 로그인하거나 MCP를 연결해야 합니다.')
+    if st.button('GitHub·연결 도구 상태 확인'):
+        from office.connections import connection_status
+        st.session_state.connection_health=connection_status()
+    if st.session_state.get('connection_health'):
+        health=st.session_state.connection_health
+        st.write(health['github'])
+        st.caption(health['mcp_status'])
+        if health['mcp']:st.write(' · '.join(health['mcp']))
+        else:st.caption('활성 MCP가 없으면 공개 웹 검색과 설치된 CLI를 사용합니다.')
     st.write('새 결과물은 회사 작업실에 만듭니다. 기존 코드나 자료를 다루려면 해당 프로젝트 폴더를 등록하세요.')
     with st.form('register-project'):
         project_name=st.text_input('프로젝트 이름')
         project_path=st.text_input('PC 프로젝트 폴더 경로')
-        network=st.checkbox('이 프로젝트의 네트워크 사용 허용 (패키지 설치·외부 자료 접근)')
+        network=st.checkbox('이 프로젝트의 네트워크 사용 허용 (패키지 설치·외부 자료 접근)',value=True)
         if st.form_submit_button('프로젝트 등록'):
             try:
                 store.register_project(project_name,project_path,network=network);st.rerun()
