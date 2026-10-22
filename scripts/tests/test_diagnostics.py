@@ -42,6 +42,15 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertEqual(result['status'],'failed')
             self.assertIn('실행 정책',result['error']);self.assertIn('확인하지 못했습니다',result['output'])
 
+    def test_internal_process_failure_is_not_success_when_cli_exits_zero(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(folder);store.clock_in();store.submit('dev','파일을 분석해줘');task=store.claim()
+            events=[{'type':'item.completed','item':{'type':'command_execution','status':'failed','exit_code':1,
+                     'aggregated_output':'CreateProcessWithLogonW failed: 267'}},{'type':'turn.completed'}]
+            result=self.execute_fixture(store,task,events,'보고서만 작성했습니다')
+            self.assertEqual(result['status'],'failed')
+            self.assertIn('내부 명령 실행',result['error'])
+
     def test_completed_turn_recovers_transient_error_and_final_file_fallback(self):
         with tempfile.TemporaryDirectory() as folder:
             store=Store(folder);store.clock_in();store.submit('dev','설명 문서를 작성해줘');task=store.claim()

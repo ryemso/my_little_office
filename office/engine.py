@@ -18,6 +18,7 @@ from office.workspaces import Workspace, files
 from office.knowledge import prepare_inputs
 from office.conversation import LiveEvents
 from office.windows_settings import windows_settings
+from office.preflight import check_workspace
 
 
 def safe_diagnostic(value):
@@ -115,6 +116,13 @@ def run_codex(store, task, end):
         project=workspace.prepare()
         working_directory=str(workspace.work.resolve()) if project else str(Path(directory).resolve())
         writable=bool(project) and task.get('kind','single') != 'plan'
+        try:
+            preflight=check_workspace(working_directory) if writable else {'scope':'app_host','skipped':'read-only stage'}
+        except (OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
+            return {'status':'failed','error':'업무 시작 전 로컬 실행 점검 실패: '+safe_diagnostic(error),
+                    'evidence':{'preflight':{'scope':'app_host','passed':False,'cwd':working_directory}}}
+        if writable:
+            store.message(task['id'],'host-preflight','system','status','로컬 사전 점검 통과: 파일 읽기·쓰기·Python 실행. Codex 내부 명령 실행은 별도 확인합니다.')
         inventory=sorted(files(workspace.work)) if project else []
         project_context={'registered':bool(project),'id':project['id'] if project else None,
                          'name':project['name'] if project else None,'source':project['path'] if project else None,
@@ -145,7 +153,7 @@ def run_codex(store, task, end):
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
         args[-1:-1]=windows_args
-        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context)
+        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context,preflight=preflight)
         stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
         stage_name={'plan':'총괄 배정(계획)','employee':'직원 실무','report':'총괄 최종 검토','single':'직접 지시'}.get(environment['stage'],environment['stage'])
         store.message(task['id'],'execution-environment','system','status','실행 단계: '+stage_name+' · 담당: '+ROLES[task['role']]+'\n프로젝트: '+str(project_context['name'] or '미지정')+' · 시작 파일 '+str(project_context['file_count'])+'개\n작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
@@ -196,12 +204,14 @@ def run_codex(store, task, end):
         denial_events=[e for e in events if e.get('type') in ('error','turn.failed') or
                        isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
         policy_block=bool(re.search(r'blocked by policy|rejected:.*policy|approval required|denied by.*policy',stderr_text+json.dumps(denial_events),re.I))
-        failed=bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
+        launch_failure=bool(re.search(r'CreateProcessWithLogonW failed|CreateProcess.*(?:failed|Rejected)|Failed to create parent directories',json.dumps(denial_events,ensure_ascii=False),re.I))
+        failed=launch_failure or bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
         if failed:
             quota = re.search(r'usage.limit|rate.limit|quota.exceeded', diagnostics, re.I)
             event_errors=[e.get('message') or e.get('error') for e in events if e.get('type') in ('error','turn.failed')]
             reason=stderr_text.strip() or json.dumps(event_errors or denial_events,ensure_ascii=False)
-            category=('Codex 명령이 실행 정책에 차단됐습니다. 로그인 오류가 아닙니다. 차단된 작업은 수행하지 않았습니다.' if policy_block else
+            category=('Codex 내부 명령 실행에 실패했습니다. 작업 경로·실행 환경 복구가 필요합니다.' if launch_failure else
+                      'Codex 명령이 실행 정책에 차단됐습니다. 로그인 오류가 아닙니다. 차단된 작업은 수행하지 않았습니다.' if policy_block else
                       'Codex 프로세스가 오류로 종료됐습니다.' if process.returncode else
                       'Codex 작업 턴이 실패했습니다.' if turn_failed else
                       'Codex 완료 이벤트를 받지 못했습니다.' if not completed else
@@ -223,6 +233,13 @@ def run_codex(store, task, end):
             if item.get('type')=='web_search':external.append({'type':'web_search','action':safe_diagnostic(json.dumps(item.get('action',{}),ensure_ascii=False))})
             elif item.get('type')=='mcp_tool_call':external.append({key:item.get(key) for key in ('type','server','tool','status')})
         evidence={'environment':environment,'commands':commands[-40:],'external_tools':external[-40:],'changes':workspace.changes() if project else []}
+        from office.smoke import PREFIX, verify
+        if task['prompt'].startswith(PREFIX):
+            acceptance=verify(workspace.work,commands)
+            evidence['acceptance']=acceptance
+            if not acceptance['passed']:
+                return {'status':'failed','output':text,'evidence':evidence,
+                        'error':'실행·분석 검증 실패: '+acceptance['reason']}
         checks={}
         for command in commands:
             match=re.search(r'pytest|unittest|vitest|jest|npm (?:run )?test|npm run build|cargo test|go test|tsc',str(command.get('command','')))

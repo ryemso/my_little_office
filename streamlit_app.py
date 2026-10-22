@@ -289,6 +289,11 @@ with st.expander('업데이트 후 실행'):
 with st.expander('프로젝트·배포·홍보 연결 관리'):
     st.write('직원과 총괄 검토는 작업 사본에 파일을 쓰고 검증합니다. 공개 웹·GitHub 원문 조사와 PC의 Codex에 등록된 연결 도구를 사용할 수 있습니다.')
     st.caption('ChatGPT 웹의 연결 계정은 로컬 Codex로 자동 이전되지 않습니다. 비공개 저장소·외부 계정은 해당 PC에서 로그인하거나 MCP를 연결해야 합니다.')
+    if st.button('로컬 실행·CSV 분석 검증 업무 시작'):
+        from office.smoke import PROMPT
+        identifier=store.submit('data',PROMPT,project_id=project_id)
+        st.success('검증 업무를 등록했습니다. 출근 상태에서 실행되며 파일·분석 값·명령 증거를 검사합니다.')
+    st.caption('검증은 선택한 프로젝트 작업 사본의 acceptance 폴더에 샘플 파일을 만듭니다. 원본 반영·외부 게시 없이 진행합니다.')
     if st.button('GitHub·연결 도구 상태 확인'):
         from office.connections import connection_status
         st.session_state.connection_health=connection_status()
