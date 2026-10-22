@@ -14,7 +14,7 @@ import traceback
 import uuid
 from scripts.local_office import ROLES
 from office.planning import instructions
-from office.workspaces import Workspace
+from office.workspaces import Workspace, files
 from office.knowledge import prepare_inputs
 from office.conversation import LiveEvents
 
@@ -22,6 +22,7 @@ from office.conversation import LiveEvents
 def safe_diagnostic(value):
     """Diagnostics are local, but still omit common credentials from UI/logs."""
     value=str(value)
+    value=re.sub(r'-----BEGIN [^-]*PRIVATE KEY-----.*?-----END [^-]*PRIVATE KEY-----','[REDACTED PRIVATE KEY]',value,flags=re.S)
     value=re.sub(r'sk-[A-Za-z0-9_-]{12,}|gh[pousr]_[A-Za-z0-9_]{12,}|github_pat_[A-Za-z0-9_]+', '[REDACTED]',value)
     value=re.sub(r'(?i)(bearer\s+)[^\s\"\']+',r'\1[REDACTED]',value)
     value=re.sub(r'(?i)((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password)\s*[\"\']?\s*[:=]\s*[\"\']?)[^\s\"\',}]+',r'\1[REDACTED]',value)
@@ -124,9 +125,15 @@ def run_codex(store, task, end):
             prompt += '\n이전 업무: ' + parent['prompt'] + '\n이전 결과: ' + parent['output'][-20000:] + '\n'
         knowledge,images=prepare_inputs(task,workspace.directory/'inputs')
         prompt += '\n아래 첨부 원본 경로는 대표가 제공한 읽기 전용 자료이며 프로젝트 밖이어도 열람 가능합니다. 수정·게시하지 마세요.\n'+knowledge
+        planning=task.get('kind') in ('plan','report')
+        if planning:
+            inventory=sorted(files(workspace.work)) if project else []
+            prompt+='\n현재 작업 사본 파일 목록(앱이 직접 확인, 최대 100개):\n'+json.dumps(inventory[:100],ensure_ascii=False)
+            prompt+='\n이 단계에서는 명령 실행 도구를 사용하지 않습니다. 제공된 지시·프로필·자료 발췌·파일 목록·직원 제출물로 계획 또는 보고를 작성하세요. 추가 파일 열람·테스트는 담당 직원의 업무로 명시하세요. 실행하지 않은 검증을 완료했다고 하지 마세요.\n'
         prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
         args = codex_command() + ['exec', '--ignore-user-config', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        if planning:args[-1:-1]=['-c','features.shell_tool=false']
         for image_path in images:
             args[-1:-1]=['--image',image_path]
         if writable and project.get('network'):
@@ -162,14 +169,32 @@ def run_codex(store, task, end):
                     events.append(value)
             except ValueError:
                 pass
-        failed = process.returncode or any(e.get('type') in ('turn.failed', 'error') for e in events)
+        completed=any(e.get('type')=='turn.completed' for e in events)
+        turn_failed=any(e.get('type')=='turn.failed' for e in events)
         text = output.read_text(encoding='utf-8', errors='replace') if output.exists() else ''
-        if failed or not text.strip() or not any(e.get('type') == 'turn.completed' for e in events):
-            diagnostics = stderr.read_text(encoding='utf-8', errors='replace') + json.dumps(events)
+        if not text.strip():
+            text=next((str(e['item'].get('text','')) for e in reversed(events)
+                       if e.get('type')=='item.completed' and isinstance(e.get('item'),dict)
+                       and e['item'].get('type')=='agent_message' and e['item'].get('phase')!='commentary'),'')
+        stderr_text=stderr.read_text(encoding='utf-8',errors='replace')
+        diagnostics=stderr_text+json.dumps(events,ensure_ascii=False)
+        denial_events=[e for e in events if e.get('type') in ('error','turn.failed') or
+                       isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
+        policy_block=bool(re.search(r'blocked by policy|rejected:.*policy|approval required|denied by.*policy',stderr_text+json.dumps(denial_events),re.I))
+        failed=bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
+        if failed:
             quota = re.search(r'usage.limit|rate.limit|quota.exceeded', diagnostics, re.I)
             event_errors=[e.get('message') or e.get('error') for e in events if e.get('type') in ('error','turn.failed')]
-            reason=stderr.read_text(encoding='utf-8',errors='replace').strip() or json.dumps(event_errors,ensure_ascii=False)
-            return {'status': 'quota_wait' if quota else 'failed', 'error': 'Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else 'Codex 실행 실패 (종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)}
+            reason=stderr_text.strip() or json.dumps(event_errors or denial_events,ensure_ascii=False)
+            category=('Codex 명령이 실행 정책에 차단됐습니다. 로그인 오류가 아닙니다. 차단된 작업은 수행하지 않았습니다.' if policy_block else
+                      'Codex 프로세스가 오류로 종료됐습니다.' if process.returncode else
+                      'Codex 작업 턴이 실패했습니다.' if turn_failed else
+                      'Codex 완료 이벤트를 받지 못했습니다.' if not completed else
+                      'Codex가 제출한 최종 결과가 없습니다.')
+            error='Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else category+' (프로세스 종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)
+            # Keep partial output for review; never turn a policy denial into success.
+            safe_text=safe_diagnostic(text)
+            return {'status':'quota_wait' if quota else 'failed','error':error,'output':safe_text}
         if re.search(r'sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN .*PRIVATE KEY-----', text):
             return {'status': 'failed', 'error': '비밀 키로 의심되는 결과의 표시를 차단했습니다. PC 로그를 확인하세요.'}
         usage = next((e.get('usage', {}) for e in reversed(events) if e.get('type') == 'turn.completed'), {})
