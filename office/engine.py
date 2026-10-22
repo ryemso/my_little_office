@@ -258,6 +258,7 @@ def run_codex(store, task, end):
 class Worker:
     def __init__(self, store, runner=None, start=True):
         self.store, self.runner = store, runner or run_codex
+        self.presence_server=None
         # Same lock as the legacy polling worker; cannot run both simultaneously.
         self.lock = (store.root / 'worker.lock').open('a+b')
         try:
@@ -285,10 +286,19 @@ class Worker:
         task = self.store.claim()
         if not task:
             return
+        self.store.activity(task['id'],'talking' if task['kind']=='plan' else 'syncing' if task.get('action_json') else 'executing','총괄 계획 시작' if task['kind']=='plan' else '실행 시작')
+        pulse_stop=threading.Event()
+        def pulse():
+            while not pulse_stop.wait(5):
+                try:self.store.heartbeat(task['id'])
+                except Exception:pass
+        pulse_thread=threading.Thread(target=pulse,daemon=True,name='office-heartbeat');pulse_thread.start()
         try:
             result = self.runner(self.store, task, time.time() + 1200)
         except Exception as error:
             result = exception_result(self.store,error)
+        finally:
+            pulse_stop.set();pulse_thread.join(timeout=1)
         self.store.finish(task['id'], result)
         if self.store.get(task['id'])['status'] in ('failed', 'quota_wait'):
             self.store.pause('실행 오류·한도 대기. 확인 후 출근 버튼으로 재개하세요.')
@@ -300,9 +310,19 @@ class Worker:
             except Exception:
                 self.store.pause('작업 저장 오류. PC 저장 공간과 로그를 확인하세요.')
 
+    def start_presence(self,port=8787):
+        if self.presence_server:return self.presence_server.url
+        from office.presence import PresenceServer
+        self.presence_server=PresenceServer(self.store,port)
+        return self.presence_server.url
+
+    def stop_presence(self):
+        if self.presence_server:self.presence_server.close();self.presence_server=None
+
     def close(self):
         if self.lock.closed:
             return
+        self.stop_presence()
         self.store.pause('앱 종료')
         self.shutdown.set()
         if hasattr(self, 'thread'):

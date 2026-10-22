@@ -91,5 +91,10 @@ class LiveEvents:
             elif kind=='mcp_tool_call' and event_type in ('item.started','item.completed'):
                 body=('연결 도구 호출 시작' if event_type=='item.started' else '연결 도구 호출 종료')+' · '+str(item.get('server',''))+' / '+str(item.get('tool',''))+' · '+str(item.get('status',''))
             else:continue
+            if kind=='command_execution':state='error' if event_type=='item.completed' and item.get('exit_code') not in (None,0) else 'executing'
+            elif kind=='web_search':state='researching'
+            elif kind=='mcp_tool_call':state='syncing'
+            else:state='writing'
+            self.store.activity(self.task['id'],state,{'error':'명령 실패 이벤트 · 복구 여부 확인 중','executing':'명령 도구 실행 이벤트','researching':'웹 검색 이벤트','syncing':'연결 도구 호출 이벤트','writing':'직원 공개 응답 이벤트'}[state])
             key='live:'+str(event_type)+':'+str(item.get('id') or hashlib.sha256(line).hexdigest())
             self.store.message(self.task['id'],key,self.task['role'],'progress',safe_diagnostic(body))

@@ -25,3 +25,11 @@ assert.equal(badge.querySelector('.owner-count').textContent,'99+');
 handlers.message({source:parent,data:{type:'streamlit:render',args:{attention_count:0,tasks:[]}}});
 assert.equal(badge.hidden,true);
 console.log('Office component handshake, avatar selection and owner alert count/open/clear contracts passed');
+
+handlers.message({source:parent,data:{type:'streamlit:render',args:{selected:'dev',tasks:[{role:'dev',status:'running',state:'researching',detail:'웹 검색 이벤트',stale:false}]}}});
+assert.equal(node('[data-role="dev"]').querySelector('.bubble').textContent,'조사');
+assert(node('#employee-task-state').textContent.includes('웹 검색 이벤트'));
+handlers.message({source:parent,data:{type:'streamlit:render',args:{selected:'dev',tasks:[{role:'dev',status:'running',state:'researching',stale:true}]}}});
+assert.equal(node('[data-role="dev"]').querySelector('.bubble').textContent,'응답 지연');
+assert(node('#employee-task-state').textContent.includes('응답 지연'));
+console.log('Observed activity and stale presence contracts passed');

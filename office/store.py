@@ -9,10 +9,11 @@ from office.planning import parse_plan
 from office.conversation import Conversations
 from office.inbox import Decisions
 from office.schedules import Schedules
+from office.activity import Activity
 
 TERMINAL = ('review', 'completed', 'failed', 'interrupted', 'cancelled', 'quota_wait', 'blocked')
 
-class Store(Conversations,Decisions,Schedules):
+class Store(Conversations,Decisions,Schedules,Activity):
     def __init__(self, root):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -39,6 +40,7 @@ class Store(Conversations,Decisions,Schedules):
         self.initialize_conversations()
         self.initialize_decisions()
         self.initialize_schedules()
+        self.initialize_activity()
         with self.connect() as con:
             if not self._get(con,'employee_access_v1',False):
                 con.execute('UPDATE projects SET network=1')

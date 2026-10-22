@@ -81,9 +81,20 @@ document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',(
 
 const labels={awaiting_approval:'게시·배포 승인 대기',delegating:'총괄 진행 관리',blocked:'팀 업무 중단',queued:'대기',running:'작업 중',review:'검토 대기',completed:'완료',cancel_requested:'중단 요청',interrupted:'중단',failed:'실패',quota_wait:'한도 대기',cancelled:'취소'};
 function renderAIUI(){
- for(const p of people){const task=officeTasks.find(t=>t.role===p.id);const el=document.querySelector('[data-role="'+p.id+'"]');el.classList.toggle('ai-working',task?.status==='running');el.querySelector('.bubble').textContent=task?.status==='running'?'작업':task?.status==='review'?'검토':task?.status==='delegating'?'관리':'···';}
+ const activityNames={idle:'대기',talking:'회의',writing:'작성',researching:'조사',executing:'실행',syncing:'연동',error:'오류'};
+ for(const p of people){
+  const task=officeTasks.find(t=>t.role===p.id),el=document.querySelector('[data-role="'+p.id+'"]'),state=task?.state||'idle';
+  el.classList.toggle('ai-working',task?.status==='running'&&!task?.stale);
+  el.querySelector('.bubble').textContent=task?.stale?'응답 지연':activityNames[state]||'대기';
+  if(task?.state&&p.activity!==state&&!task.stale&&!demo){
+   p.activity=state;const i=people.indexOf(p);
+   if(state==='talking')walk(p,[730+(i%3)*57,237+Math.floor(i/3)*69]);
+   else if(state==='researching')walk(p,[710+(i%3)*58,422+Math.floor(i/3)*48]);
+   else walk(p,[...p.home]);
+  }
+ }
  const state=document.querySelector('#employee-task-state'),task=officeTasks.find(t=>t.role===selected);
- if(state)state.textContent=task?(labels[task.status]||task.status):'배정된 업무 없음';
+ if(state)state.textContent=task?(labels[task.status]||task.status)+(task.stale?' · 실행기 응답 지연':task.detail?' · '+task.detail:''):'배정된 업무 없음';
 }
 let ownerAttention=0;
 function renderOwnerAlert(count){

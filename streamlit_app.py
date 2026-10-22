@@ -38,7 +38,7 @@ pending_role = st.session_state.pop('pending_role', None)
 if pending_role in ROLES:
     st.session_state.selected_role = pending_role
 st.title('🏡 My Little Office')
-st.caption('v0.15 · 내 PC에서 출근하는 작은 AI 회사 · 직원에게 직접 지시하고 같은 사무실에서 결과를 받으세요.')
+st.caption('v0.16 · 내 PC에서 출근하는 작은 AI 회사 · 직원에게 직접 지시하고 같은 사무실에서 결과를 받으세요.')
 
 @st.fragment(run_every='2s')
 def live_office():
@@ -60,7 +60,8 @@ def live_office():
     if right.button('퇴근 · 현재 작업 중단', disabled=not status.get('on_duty', False), use_container_width=True):
         store.pause()
         st.rerun()
-    event = scene(tasks=[{'role': t['role'], 'status': t['status']} for t in tasks], selected=st.session_state.selected_role, attention_count=len(decisions), key='office_scene', default=None)
+    activity=store.activity_board()
+    event = scene(tasks=activity, selected=st.session_state.selected_role, attention_count=len(decisions), key='office_scene', default=None)
     if st.button(f"❗ 대표 검토·승인함 ({len(decisions)})",key='open-owner-inbox',use_container_width=True):
         st.session_state.inbox_open=True;st.rerun()
     if isinstance(event, dict) and event.get('event_id') != st.session_state.get('scene_event'):
@@ -73,6 +74,16 @@ def live_office():
             st.session_state.scene_event = event['event_id']
             st.session_state.pending_role = role
             st.rerun()
+
+    with st.expander('실시간 직원 활동 · 실행기 응답'):
+        st.dataframe([{'담당':row['name'],'활동':'응답 지연' if row['stale'] else row['label'],
+                       '현재 상황':row['detail'],'업무 상태':row['status']} for row in activity],hide_index=True,width='stretch')
+        st.caption('활동은 가장 최근 관측한 명령·검색·연결 도구 이벤트로 표시합니다. 하트비트는 실행기 생존 신호이며 업무 진척이나 완료 증거가 아닙니다.')
+        from office.presence import visitors
+        external=visitors(store)
+        if external:
+            st.dataframe([{'외부 에이전트':row['name'],'상태':'키 폐기' if row['revoked'] else row['state'] if row['online'] else '연결 끊김',
+                           '짧은 상태 설명':row['detail']} for row in external],hide_index=True,width='stretch')
 
 live_office()
 if st.session_state.get('inbox_open'):decision_dialog(store)
@@ -424,3 +435,44 @@ with st.expander('예약·반복 업무'):
         if scheduled['last_task']:st.caption('최근 업무: '+scheduled['last_task'])
         if st.button('예약 정지' if scheduled['enabled'] else '예약 재개',key='schedule-toggle-'+scheduled['id']):
             store.set_schedule(scheduled['id'],not scheduled['enabled']);st.rerun()
+
+with st.expander('업무 일지 · 날짜별 기록'):
+    from datetime import timedelta
+    memo_day=st.date_input('조회 날짜 · 한국 시간',value=datetime.now(KST).date()-timedelta(days=1))
+    memo=store.daily_memo(memo_day)
+    st.caption('해당 날짜에 마지막 변경된 대표 업무의 현재 기록 · 대화 '+str(memo['messages'])+'건')
+    st.write('제출·검토 완료 '+str(memo['submitted'])+'건 · 오류·중단 '+str(memo['failed'])+'건')
+    if not memo['tasks']:st.info('해당 날짜의 업무 기록이 없습니다.')
+    for record in memo['tasks']:
+        st.write(ROLES[record['role']]+' · '+record['status']+' · '+record['prompt'][:150])
+        if st.button('이 업무 대화 열기',key='memo-open-'+record['id']):
+            st.session_state.chat_channel=store.thread_id(record['id']);st.rerun()
+    memo_text='# '+memo['day']+' 업무 기록\n\n'+'\n'.join('- '+ROLES[t['role']]+' · '+t['status']+' · '+t['prompt'] for t in memo['tasks'])
+    st.download_button('이 날짜 일지 내려받기',memo_text,file_name='office-daily-'+memo['day']+'.md')
+
+with st.expander('외부 에이전트 상태 연결'):
+    st.caption('다른 도구의 활동 상태를 같은 사무실에서 확인합니다. 상태 키는 업무 지시·파일 접근·게시 권한을 주지 않습니다. API는 이 PC에서만 접근합니다.')
+    if st.button('로컬 상태 연결 서버 시작'):
+        try:st.success(worker.start_presence())
+        except (ValueError,OSError) as error:st.error('연결 서버 시작 실패: '+str(error))
+    if worker.presence_server:
+        st.code(worker.presence_server.url)
+        if st.button('상태 연결 서버 정지'):worker.stop_presence();st.rerun()
+    with st.form('presence-key'):
+        visitor_name=st.text_input('연결할 에이전트 표시 이름')
+        if st.form_submit_button('상태 전용 키 발급'):
+            try:
+                from office.presence import issue_key
+                identifier,token=issue_key(store,visitor_name)
+                st.session_state.new_presence_key=token
+                st.success('키를 발급했습니다. 아래에서 한 번 확인하고 연결할 프로그램에 설정하세요.')
+            except ValueError as error:st.error(str(error))
+    if st.session_state.get('new_presence_key'):
+        st.code(st.session_state.new_presence_key)
+        if st.button('키 표시 닫기'):del st.session_state.new_presence_key;st.rerun()
+    st.caption('발급한 키를 OFFICE_AGENT_KEY 환경변수로 지정한 뒤 python -m scripts.push_agent --state researching --once 를 실행하면 됩니다. --state-file로 명시한 상태 JSON을 15초마다 보낼 수 있습니다.')
+    from office.presence import visitors,revoke
+    for visitor in visitors(store):
+        if not visitor['revoked']:
+            if st.button(visitor['name']+' 상태 키 폐기',key='revoke-presence-'+visitor['id']):
+                revoke(store,visitor['id']);st.rerun()
