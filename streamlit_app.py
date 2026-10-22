@@ -313,6 +313,67 @@ with st.expander('프로젝트·배포·홍보 연결 관리'):
                 store.register_project(project_name,project_path,network=network);st.rerun()
             except (ValueError,OSError) as error:st.error(str(error))
     st.write('배포·홍보 게시 등 외부 실행은 이미 PC에서 로그인한 도구나 프로젝트 스크립트를 연결합니다. 명령 인자는 JSON 배열로 등록하며 비밀 키를 넣지 마세요.')
+    st.write('네이버 블로그 연결')
+    st.caption('전용 브라우저에서 한 번 로그인하면 세션은 이 PC에 유지됩니다. 평소 Chrome 로그인은 별개이며 비밀번호를 앱에 입력하지 않습니다.')
+    naver_blog=st.text_input('네이버 블로그 ID',value='qt0177')
+    if st.button('브라우저 실행 준비 · 최초 1회 다운로드'):
+        try:
+            from office.browser_setup import start_setup
+            existing=st.session_state.get('browser_installer')
+            if existing and existing.poll() is None:st.info('브라우저 준비가 진행 중입니다.')
+            else:st.session_state.browser_installer=start_setup(store.root)
+        except OSError as error:st.error(str(error))
+    installer=st.session_state.get('browser_installer')
+    if installer:
+        state=installer.poll()
+        st.caption('브라우저 준비 중' if state is None else '브라우저 준비 완료' if state==0 else '브라우저 준비 실패 · browser-install.log 확인')
+    if st.button('네이버 로그인 창 열기'):
+        try:
+            from office.browser_setup import start_setup
+            existing=st.session_state.get('naver_login_process')
+            if existing and existing.poll() is None:st.info('이미 로그인 창이 열려 있습니다.')
+            else:st.session_state.naver_login_process=start_setup(store.root,naver_blog)
+        except (ValueError,OSError) as error:st.error(str(error))
+    login_state=store.root/'naver-login.json'
+    if login_state.exists():
+        try:st.caption(json.loads(login_state.read_text(encoding='utf-8')).get('message',''))
+        except (ValueError,OSError):pass
+    if st.button('브라우저 준비·로그인 상태 새로고침'):st.rerun()
+    with st.form('register-naver-publisher'):
+        naver_file=st.text_input('게시 원문 JSON 경로',value='publishing/naver.json')
+        st.caption('JSON 필드: post_id(글마다 고유), title, body, images(선택·프로젝트 상대 경로 배열). 임시 저장 검증 후 발행하며 발행은 대표 승인을 받습니다.')
+        if st.form_submit_button('네이버 임시 저장·발행 기능 연결'):
+            try:
+                from office.naver import blog_id
+                from office.workspaces import target
+                blog=blog_id(naver_blog.strip())
+                target(Path(store.project(project_id)['path']),naver_file)
+                for mode,label in [('draft','임시 저장·원문 검증'),('publish','승인 원문 발행·URL 검증')]:
+                    store.register_action(project_id,'네이버 '+label,'https://blog.naver.com/'+blog,
+                                          ['office:naver',blog,naver_file,mode],automatic=False)
+                st.success('임시 저장과 발행을 연결했습니다. 총괄에게 원문 작성 → 임시 저장 → 발행을 지시하세요.')
+            except (ValueError,OSError) as error:st.error(str(error))
+    with st.form('naver-recovery'):
+        st.caption('발행 결과가 불확실할 때는 재발행하지 않고 실제 URL로 검증합니다. 저장만 된 글은 임시 저장 원문을 다시 읽어 복구할 수 있습니다.')
+        recovery_file=st.text_input('복구할 게시 JSON 경로',value='publishing/naver.json')
+        recovery_url=st.text_input('이미 발행된 글 URL · 임시 저장 복구 시 공란')
+        if st.form_submit_button('네이버 결과 확인 작업 연결'):
+            try:
+                from office.naver import blog_id,post_url
+                from office.workspaces import target
+                blog=blog_id(naver_blog.strip());target(Path(store.project(project_id)['path']),recovery_file)
+                argv=['office:naver',blog,recovery_file,'verify',recovery_url.strip()] if recovery_url.strip() else ['office:naver',blog,recovery_file,'recover-draft']
+                if recovery_url.strip() and not post_url(recovery_url.strip(),blog):raise ValueError('해당 블로그의 게시물 URL을 입력하세요.')
+                store.register_action(project_id,'네이버 기존 결과 확인·복구','https://blog.naver.com/'+blog,argv,automatic=False)
+                st.success('확인 작업을 연결했습니다. 총괄에게 이 작업 실행을 지시하세요.')
+            except (ValueError,OSError) as error:st.error(str(error))
+    receipts=sorted((store.root/'publishing').glob('*.json'),key=lambda path:path.stat().st_mtime,reverse=True) if (store.root/'publishing').exists() else []
+    for receipt_file in receipts[:10]:
+        try:
+            receipt=json.loads(receipt_file.read_text(encoding='utf-8'))
+            st.caption('네이버 기록 · '+receipt.get('title','')+' · '+receipt.get('state',''))
+            if receipt.get('url'):st.write(receipt['url'])
+        except (ValueError,OSError):pass
     with st.form('register-github-publisher'):
         github_repo=st.text_input('결과를 받을 GitHub 저장소',placeholder='owner/repository')
         st.caption('대표 승인 후 변경 파일만 office/ 전용 브랜치에 올립니다. 기본 브랜치 병합·배포는 별도입니다. 이 PC의 gh 로그인을 사용합니다.')
@@ -341,3 +402,25 @@ with st.expander('프로젝트·배포·홍보 연결 관리'):
     selected_actions=store.actions(project_id)
     for action in selected_actions:
         st.caption(action['name']+' → '+action['target']+(' · 자동 실행 허용' if action['automatic'] else ' · 실행 전 승인'))
+
+with st.expander('예약·반복 업무'):
+    st.caption('PC 서버가 켜져 있고 출근 중일 때 실행합니다. 꺼져 있던 동안 놓친 회차는 한 건만 접수합니다. 외부 작업의 승인 규칙은 유지됩니다.')
+    with st.form('schedule-task'):
+        schedule_role=st.selectbox('예약 담당자',list(ROLES),format_func=lambda value:ROLES[value])
+        schedule_prompt=st.text_area('예약 업무 지시',placeholder='자료 조사 후 글을 작성하고, 임시 저장과 발행 승인을 요청해줘')
+        schedule_date=st.date_input('첫 실행 날짜',value=datetime.now(KST).date())
+        schedule_time=st.time_input('첫 실행 시각 · 한국 시간',value=datetime.now(KST).time().replace(second=0,microsecond=0))
+        repeat_minutes=st.number_input('반복 간격 · 분 (0이면 한 번)',min_value=0,value=0,step=5)
+        if st.form_submit_button('예약 등록'):
+            try:
+                due=datetime.combine(schedule_date,schedule_time,tzinfo=KST).timestamp()
+                store.add_schedule(project_id,schedule_role,schedule_prompt,due,int(repeat_minutes)*60)
+                st.success('예약했습니다.')
+            except (ValueError,OverflowError) as error:st.error(str(error))
+    for scheduled in store.schedules():
+        st.write(('실행 중' if scheduled['enabled'] else '일시 정지')+' · '+scheduled['prompt'][:100])
+        st.caption('다음 시각: '+datetime.fromtimestamp(scheduled['next_due'],KST).strftime('%Y-%m-%d %H:%M')+' · '+('반복 '+str(scheduled['interval_seconds']//60)+'분' if scheduled['interval_seconds'] else '한 번'))
+        if scheduled['error']:st.warning(scheduled['error'])
+        if scheduled['last_task']:st.caption('최근 업무: '+scheduled['last_task'])
+        if st.button('예약 정지' if scheduled['enabled'] else '예약 재개',key='schedule-toggle-'+scheduled['id']):
+            store.set_schedule(scheduled['id'],not scheduled['enabled']);st.rerun()

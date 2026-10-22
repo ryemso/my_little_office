@@ -40,7 +40,14 @@ def decision_dialog(store):
                 st.download_button('전체 결과 다운로드',item['output'],file_name='office-result.md',key='inbox-download-'+identifier)
             evidence=json.loads(item.get('evidence_json') or '{}')
             if evidence:
-                with st.expander('실행 증거 확인'):st.json(evidence)
+                with st.expander('실행 증거 확인'):
+                    st.json(evidence)
+                    screenshot=evidence.get('action',{}).get('screenshot')
+                    if screenshot:
+                        from pathlib import Path
+                        path=Path(screenshot).resolve()
+                        if path.is_relative_to((store.root/'publishing').resolve()) and path.is_file() and path.suffix=='.png':
+                            st.image(str(path),caption='네이버 저장·발행 검증 화면')
             if item['decision_type']=='approval':
                 action=json.loads(item['action_json'])
                 st.write('작업: '+action['name'])
@@ -74,6 +81,9 @@ def decision_dialog(store):
                 if st.button('검토 완료',key='inbox-complete-'+identifier,type='primary'):
                     store.complete(identifier);notice('검토 완료로 처리했습니다.')
             else:
+                if st.button('실패한 단계부터 다시 진행',key='inbox-retry-'+identifier):
+                    try:store.retry_task(identifier);notice('실패 단계부터 대기열에 넣었습니다. 출근하면 재개하며 필요한 외부 승인은 다시 요청합니다.')
+                    except ValueError as error:st.error(str(error))
                 if st.button('문제 확인했음',key='inbox-ack-'+identifier):
                     try:store.acknowledge_decision(identifier,item['updated']);notice('확인했습니다. 완료 처리나 자동 재실행은 하지 않았습니다.')
                     except ValueError as error:st.error(str(error))

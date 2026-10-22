@@ -29,6 +29,10 @@ def run_action(store,task,end):
         return {'status':'failed','error':'승인 이후 작업 파일이 바뀌었습니다. 변경을 확인한 뒤 다시 지시하세요.'}
     store.message(task['id'],'action-start',task['role'],'status','연결 작업을 실행합니다.\n작업: '+action['name']+'\n대상: '+action['target'])
     argv=json.loads(action['argv'])
+    if argv[0]=='office:naver':
+        if not project or not project.get('network'):raise ValueError('프로젝트 네트워크 사용을 허용해야 네이버에 연결할 수 있습니다.')
+        from office.naver import execute
+        return execute(store,task,workspace,argv,end)
     if argv[0]=='office:github':
         if len(argv)!=2:raise ValueError('GitHub 연결 인자 오류')
         if not project or not project.get('network'):raise ValueError('프로젝트 네트워크 사용을 허용해야 GitHub에 반영할 수 있습니다.')

@@ -65,3 +65,7 @@ python scripts/check_site.py
 ```
 
 main 변경 → GitHub Actions 검사 → GitHub Pages 공개 사무실 배포. Streamlit 앱은 PC에서 실행합니다. 실제 Codex 호출 없이 모의 응답으로 UI·상태 전이를 테스트합니다.
+
+## 실제 게시와 반복 업무
+
+로컬 실행 점검, CSV 분석 검증, 승인 후 GitHub 브랜치 반영, 네이버 임시 저장·발행 연결, 예약·반복 접수 및 실패 단계 재개를 제공합니다. 네이버는 전용 브라우저에서 최초 로그인이 필요합니다. [설정·사용법·실사용 검증 범위](docs/AUTOMATION.md)를 확인하세요.

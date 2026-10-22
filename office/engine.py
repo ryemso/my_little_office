@@ -148,6 +148,7 @@ def run_codex(store, task, end):
         prompt+='\n외부 조사: 공개 웹 검색과 공개 GitHub 원문을 실제로 열어 근거를 확인하세요. PC의 Codex에 연결된 MCP 도구·기존 gh 로그인은 해당 도구의 권한 범위에서 사용 가능합니다. ChatGPT 웹의 연결 계정이 자동 이전됐다고 가정하지 마세요. 비밀 값이나 인증 파일을 직접 읽거나 출력하지 마세요. 외부 게시·배포는 등록된 연결 작업을 사용하세요.\n'
         if writable:prompt+='\n제작·개발 지시는 제안으로 끝내지 말고 프로젝트 작업 사본에 검토 가능한 실제 결과물을 작성하세요. 사용자가 제안·설명만 요청한 경우는 예외입니다. 결과 파일 경로와 실제 검증 결과를 제출하세요.\n'
         prompt += instructions(store, task)
+        prompt+='\n필수 산출물 파일: '+task.get('expected_json','[]')+' · 이 파일이 없거나 비어 있으면 검증 실패로 처리합니다.\n'
         prompt += '\n현재 업무:\n' + task['prompt']
         args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
@@ -240,7 +241,12 @@ def run_codex(store, task, end):
             if not acceptance['passed']:
                 return {'status':'failed','output':text,'evidence':evidence,
                         'error':'실행·분석 검증 실패: '+acceptance['reason']}
-        checks={}
+        from office.artifacts import inspect_artifacts
+        artifacts=inspect_artifacts(workspace.work,json.loads(task.get('expected_json','[]'))) if project else []
+        evidence['artifacts']=artifacts
+        if any(not artifact['present'] for artifact in artifacts):
+            return {'status':'failed','output':text,'evidence':evidence,'error':'필수 산출물 파일이 없거나 비어 있습니다. 후속 업무를 진행하지 않습니다.'}
+        checks={} 
         for command in commands:
             match=re.search(r'pytest|unittest|vitest|jest|npm (?:run )?test|npm run build|cargo test|go test|tsc',str(command.get('command','')))
             if match and command.get('exit_code') is not None:checks[match.group(0)]=command['exit_code']
@@ -275,6 +281,7 @@ class Worker:
         status, _ = self.store.status()
         if not status.get('on_duty'):
             return
+        self.store.tick_schedules()
         task = self.store.claim()
         if not task:
             return

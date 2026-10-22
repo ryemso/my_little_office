@@ -8,10 +8,11 @@ from scripts.local_office import ROLES
 from office.planning import parse_plan
 from office.conversation import Conversations
 from office.inbox import Decisions
+from office.schedules import Schedules
 
 TERMINAL = ('review', 'completed', 'failed', 'interrupted', 'cancelled', 'quota_wait', 'blocked')
 
-class Store(Conversations,Decisions):
+class Store(Conversations,Decisions,Schedules):
     def __init__(self, root):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -26,7 +27,7 @@ class Store(Conversations,Decisions):
                     usage TEXT NOT NULL DEFAULT '{}');
             ''')
             columns = {row['name'] for row in con.execute('PRAGMA table_info(tasks)')}
-            for name, definition in [('kind', "TEXT NOT NULL DEFAULT 'single'"), ('root_id', 'TEXT'), ('ordinal', 'INTEGER NOT NULL DEFAULT 0'), ('plan_json', "TEXT NOT NULL DEFAULT ''"), ('project_id', 'TEXT'), ('action_json', "TEXT NOT NULL DEFAULT ''"), ('evidence_json', "TEXT NOT NULL DEFAULT '{}'"), ('approval_hash', "TEXT NOT NULL DEFAULT ''"), ('context_json', "TEXT NOT NULL DEFAULT '{}'")]:
+            for name, definition in [('kind', "TEXT NOT NULL DEFAULT 'single'"), ('root_id', 'TEXT'), ('ordinal', 'INTEGER NOT NULL DEFAULT 0'), ('plan_json', "TEXT NOT NULL DEFAULT ''"), ('project_id', 'TEXT'), ('action_json', "TEXT NOT NULL DEFAULT ''"), ('evidence_json', "TEXT NOT NULL DEFAULT '{}'"), ('approval_hash', "TEXT NOT NULL DEFAULT ''"), ('context_json', "TEXT NOT NULL DEFAULT '{}'"), ('expected_json', "TEXT NOT NULL DEFAULT '[]'")]:
                 if name not in columns:
                     con.execute(f'ALTER TABLE tasks ADD COLUMN {name} {definition}')
             con.execute('CREATE INDEX IF NOT EXISTS team_tasks ON tasks(root_id,ordinal)')
@@ -37,6 +38,7 @@ class Store(Conversations,Decisions):
         initialize(self)
         self.initialize_conversations()
         self.initialize_decisions()
+        self.initialize_schedules()
         with self.connect() as con:
             if not self._get(con,'employee_access_v1',False):
                 con.execute('UPDATE projects SET network=1')
@@ -198,8 +200,8 @@ class Store(Conversations,Decisions):
                     action = registered.get(step.get('action'))
                     status = 'awaiting_approval' if action and not action['automatic'] else 'queued'
                     child_id=str(uuid.uuid4())
-                    con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json,context_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                                (child_id, step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json']))
+                    con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json,context_json,expected_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                                (child_id, step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json'],json.dumps(step.get('artifacts',[]),ensure_ascii=False)))
                     self._message(con,child_id,'submitted','lead','assignment',ROLES[step['role']]+' 담당에게 배정합니다.\n'+step['prompt'])
                     if status=='awaiting_approval':self._message(con,child_id,'approval-needed','system','status','연결 작업 실행 승인을 기다립니다.')
             if old['root_id']:

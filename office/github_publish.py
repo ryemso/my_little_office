@@ -24,11 +24,16 @@ def publish_workspace(workspace, repo, task_id, end, cancelled=lambda:False, api
         if api is not None:return api(method,path,body)
         args=[gh,'api','--hostname','github.com','--method',method,'repos/'+repo+'/'+path]
         if body is not None:args+=['--input','-']
-        result=subprocess.run(args,input=json.dumps(body) if body is not None else None,
-                              capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=min(30,max(1,end-time.time())))
-        if result.returncode:
-            from office.engine import safe_diagnostic
-            raise RuntimeError('GitHub API 실패: '+safe_diagnostic(result.stderr)[-1000:])
+        for attempt in range(3):
+            result=subprocess.run(args,input=json.dumps(body) if body is not None else None,
+                                  capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=min(30,max(1,end-time.time())))
+            if not result.returncode:break
+            transient=bool(re.search(r'HTTP 50[234]|HTTP 429|connection reset|TLS handshake timeout',result.stderr,re.I))
+            if method!='GET' or not transient or attempt==2:
+                from office.engine import safe_diagnostic
+                raise RuntimeError('GitHub API 실패: '+safe_diagnostic(result.stderr)[-1000:])
+            if cancelled() or time.time()+2>=end:raise RuntimeError('GitHub 조회 재시도 중단')
+            time.sleep(1)
         return json.loads(result.stdout)
     def remote_at(tree,name):
         parts=name.split('/')

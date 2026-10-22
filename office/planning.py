@@ -16,8 +16,13 @@ def parse_plan(text):
     if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
         raise ValueError('총괄은 1~6개 업무만 배정할 수 있습니다.')
     for step in steps:
-        if not isinstance(step, dict) or not {'role', 'prompt'} <= set(step) or not set(step) <= {'role','prompt','action'}:
+        if not isinstance(step, dict) or not {'role', 'prompt'} <= set(step) or not set(step) <= {'role','prompt','action','artifacts'}:
             raise ValueError('배정 업무에는 role과 prompt만 필요합니다.')
+        if 'artifacts' in step:
+            from pathlib import PurePosixPath
+            outputs=step['artifacts']
+            if not isinstance(outputs,list) or len(outputs)>30 or any(not isinstance(name,str) or not name or '\\' in name or PurePosixPath(name).is_absolute() or '..' in PurePosixPath(name).parts for name in outputs):
+                raise ValueError('산출물은 프로젝트 안의 상대 파일 경로 배열이어야 합니다.')
         if 'action' in step and (not isinstance(step['action'],str) or not step['action']):
             raise ValueError('등록된 action ID가 필요합니다.')
         if step['role'] not in ROLES or step['role'] == 'lead':
@@ -33,9 +38,9 @@ def instructions(store, task):
     if kind == 'plan':
         actions=store.actions(task.get('project_id')) if task.get('project_id') else []
         available=json.dumps([{'id':a['id'],'name':a['name'],'target':a['target']} for a in actions],ensure_ascii=False)
-        return ('등록된 외부 작업: '+available+'\n외부 작업을 배정할 때는 role/prompt에 action 필드로 등록 ID를 추가하세요. 등록되지 않은 action은 만들지 마세요.\n' + '당신은 총괄입니다. 대표 지시를 실제 하부 직원들이 순서대로 수행할 1~6개 업무로 나누세요. '
+        return ('등록된 외부 작업: '+available+'\n네이버 연결 작업은 원문 JSON(post_id,title,body,images 선택)을 먼저 제작하고 draft 작업, publish 작업 순으로 배정하세요. 실제 글마다 고유 post_id를 유지하세요. 외부 작업을 배정할 때는 role/prompt에 action 필드로 등록 ID를 추가하세요. 등록되지 않은 action은 만들지 마세요.\n' + '당신은 총괄입니다. 대표 지시를 실제 하부 직원들이 순서대로 수행할 1~6개 업무로 나누세요. '
                 '앞 업무 결과가 다음 직원에게 전달됩니다. 연결된 프로젝트에서 파일 작성·수정·테스트·분석·홍보물 제작을 실제로 수행할 수 있습니다. 게시·배포는 아래 등록된 action ID로만 배정하세요. 연결되지 않은 계정의 외부 실행을 약속하지 마세요. '
-                '대표가 제작·개발·판매 준비를 요청하면 제안 담당만 배정하지 말고 실제 샘플 파일·문안·검증을 만드는 담당 업무를 반드시 포함하세요. 각 담당 지시에 결과 파일과 완료 기준을 적으세요. '
+                '대표가 제작·개발·판매 준비를 요청하면 제안 담당만 배정하지 말고 실제 샘플 파일·문안·검증을 만드는 담당 업무를 반드시 포함하세요. 각 담당 지시에 결과 파일과 완료 기준을 적고 제작 업무에는 artifacts 배열로 필수 상대 파일 경로를 지정하세요. 조회·설명 업무는 빈 배열을 사용합니다. '
                 '총괄 자신에게 배정하거나 재귀적인 업무 배정을 요청하지 마세요. '
                 '출력은 설명 없이 JSON 하나만: {"tasks":[{"role":"plan","prompt":"구체적인 업무 지시"}]}. '
                 '가능한 role은 plan, dev, design, market, data입니다. 각 prompt는 5~3000자입니다.\n')

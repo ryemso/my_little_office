@@ -118,3 +118,12 @@ class DiagnosticsTests(unittest.TestCase):
             self.assertEqual(result['status'],'failed')
             self.assertIn('unexpected argument',result['error'])
             self.assertIn('종료 코드 2',result['error'])
+
+    def test_declared_missing_artifact_cannot_be_submitted_as_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(folder);store.clock_in();project=store.company_project()
+            store.submit('dev','필수 파일 생성해줘',project_id=project)
+            task=store.claim();task['expected_json']='["required.csv"]'
+            result=self.execute_fixture(store,task,[{'type':'turn.completed'}],'완료했습니다')
+            self.assertEqual(result['status'],'failed')
+            self.assertFalse(result['evidence']['artifacts'][0]['present'])
