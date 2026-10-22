@@ -17,6 +17,7 @@ from office.planning import instructions
 from office.workspaces import Workspace, files
 from office.knowledge import prepare_inputs
 from office.conversation import LiveEvents
+from office.windows_settings import windows_settings
 
 
 def safe_diagnostic(value):
@@ -133,6 +134,11 @@ def run_codex(store, task, end):
         prompt += instructions(store, task)
         prompt += '\n현재 업무:\n' + task['prompt']
         args = codex_command() + ['exec', '--ignore-user-config', '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
+        windows_args,environment=windows_settings()
+        args[-1:-1]=windows_args
+        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'))
+        stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
+        store.message(task['id'],'execution-environment','system','status','실행 환경 · 작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
         if planning:args[-1:-1]=['-c','features.shell_tool=false']
         for image_path in images:
             args[-1:-1]=['--image',image_path]
@@ -194,14 +200,14 @@ def run_codex(store, task, end):
             error='Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else category+' (프로세스 종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)
             # Keep partial output for review; never turn a policy denial into success.
             safe_text=safe_diagnostic(text)
-            return {'status':'quota_wait' if quota else 'failed','error':error,'output':safe_text}
+            return {'status':'quota_wait' if quota else 'failed','error':error,'output':safe_text,'evidence':{'environment':environment}}
         if re.search(r'sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN .*PRIVATE KEY-----', text):
             return {'status': 'failed', 'error': '비밀 키로 의심되는 결과의 표시를 차단했습니다. PC 로그를 확인하세요.'}
         usage = next((e.get('usage', {}) for e in reversed(events) if e.get('type') == 'turn.completed'), {})
         commands=[{k:e['item'].get(k) for k in ('command','status','exit_code','aggregated_output')} for e in events if e.get('type')=='item.completed' and isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
         for command in commands:
             if isinstance(command.get('aggregated_output'),str):command['aggregated_output']=command['aggregated_output'][-4000:]
-        evidence={'commands':commands[-40:],'changes':workspace.changes() if project else []}
+        evidence={'environment':environment,'commands':commands[-40:],'changes':workspace.changes() if project else []}
         checks={}
         for command in commands:
             match=re.search(r'pytest|unittest|vitest|jest|npm (?:run )?test|npm run build|cargo test|go test|tsc',str(command.get('command','')))
