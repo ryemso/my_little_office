@@ -69,6 +69,7 @@ function safeText(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&
 const taskLabels={awaiting_approval:'게시·배포 승인 대기',delegating:'총괄 진행 관리',blocked:'팀 업무 중단',completed:'완료',cancelled:'취소',quota_wait:'한도 대기',queued:'PC 출근 대기',running:'작업 중',review:'AI 초안 · 검토 대기',failed:'실패',incomplete:'부분 결과 · 확인 필요',interrupted:'실행 중단'};
 let taskReadError='',draftPrompt='',draftRole='lead';
 function renderAIUI(){
+ if(window.officeRuntimeManaged)return;
  const panel=document.querySelector('#work-panel');if(!panel)return;
  const selectedTask=officeTasks.find(t=>t.role===selected),stateEl=document.querySelector('#employee-task-state');
  if(stateEl)stateEl.textContent=selectedTask?(taskLabels[selectedTask.status]||selectedTask.status):'실행 사무실에서 직접 지시하세요';

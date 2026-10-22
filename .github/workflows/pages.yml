@@ -24,10 +24,12 @@ jobs:
       - run: python scripts/build_office_component.py --check
       - run: python scripts/build_release_manifest.py --check
       - run: node --check site/app.js
+      - run: node --check site/runtime.js
       - run: node scripts/check_office_component.cjs
       - run: python3 -m unittest discover -s scripts/tests -v
       - run: python -m playwright install --with-deps chromium
       - run: python -m scripts.test_browser_adapter
+      - run: python -m scripts.test_web_office
       - run: python3 scripts/check_site.py
       - uses: actions/upload-pages-artifact@v3
         with:

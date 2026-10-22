@@ -2,7 +2,7 @@
 
 직무별 AI 직원과 함께 제품·서비스 사업을 진행하는 작은 픽셀 사무실.
 
-**v0.16: 관측 이벤트 기반 직원 활동, 실행기 응답 지연 표시, 업무 일지와 외부 에이전트 상태 연결.** 직원 선택 → 업무 지시 → PC의 Codex 실행 → 결과 확인까지 앱 안에서 진행합니다. 명령을 복사하거나 ChatGPT·GitHub Actions에 다시 입력하지 않습니다.
+**v0.17: Streamlit 기본 화면을 제거하고 GitHub Pages와 PC에서 같은 웹 사무실을 사용합니다.** 직원 선택 → 업무 지시 → PC의 Codex 실행 → 결과 확인까지 앱 안에서 진행합니다. 명령을 복사하거나 ChatGPT·GitHub Actions에 다시 입력하지 않습니다.
 
 ## 시작
 
@@ -14,7 +14,7 @@ Windows에서 최신 코드를 받은 뒤:
 
 Python 3.10 이상과 Node.js가 필요합니다. [설치·운영·오류 해결 안내](docs/AI_SETUP.md).
 
-[GitHub Pages 공개 사무실](https://ryemso.github.io/my_little_office/)은 PC 실행 사무실로 들어가는 입구입니다. 실제 앱은 `http://127.0.0.1:8501`에서 열립니다. Pages에서 Python을 실행하지 않습니다.
+[GitHub Pages 공개 사무실](https://ryemso.github.io/my_little_office/)은 PC 실행 사무실로 들어가는 입구입니다. PC 실행기는 `http://127.0.0.1:8501`에서 열리며 Pages 화면을 연결해서 사용할 수 있습니다. Pages에서 Python을 실행하지 않습니다.
 
 ## 대표 검토·승인함
 
@@ -71,3 +71,5 @@ main 변경 → GitHub Actions 검사 → GitHub Pages 공개 사무실 배포. 
 로컬 실행 점검, CSV 분석 검증, 승인 후 GitHub 브랜치 반영, 네이버 임시 저장·발행 연결, 예약·반복 접수 및 실패 단계 재개를 제공합니다. 네이버는 전용 브라우저에서 최초 로그인이 필요합니다. [설정·사용법·실사용 검증 범위](docs/AUTOMATION.md)를 확인하세요.
 
 [기능 참고 및 상태 연결 안내](docs/ACTIVITY_AND_AGENTS.md)
+
+[웹 사무실·PC 실행기 연결 안내](docs/WEB_OFFICE.md)

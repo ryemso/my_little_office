@@ -14,3 +14,11 @@
 
 /* Owner decision marker: a static, keyboard-accessible alert above the avatar. */
 .owner-alert{position:absolute;left:20px;top:-26px;z-index:30;min-width:34px;height:32px;padding:1px 8px;background:#fff0a8;color:#6c321e;border:3px solid #965c32;box-shadow:3px 3px 0 #c9ab6b;font:bold 24px/24px monospace;pointer-events:none}.owner-alert[hidden]{display:none!important}.owner-alert:after{content:'';position:absolute;left:10px;bottom:-8px;width:8px;height:8px;background:#fff0a8;border-right:2px solid #965c32;border-bottom:2px solid #965c32;transform:rotate(45deg)}.owner-count{position:absolute;top:-10px;right:-20px;background:#ad4436;border:2px solid #77372d;color:#fff8e8;padding:1px 4px;font:bold 11px/14px monospace;min-width:19px}.employee.needs-attention .nameplate{border-color:#965c32;background:#fff0a8;color:#6c321e}.employee.needs-attention .bubble{opacity:0}
+/* The existing pixel scene remains intact; only the operational web forms are added. */
+#work-panel form{display:grid;gap:12px;margin:16px 0;padding:16px;border:1px solid #b9c8bc;border-radius:8px}
+#work-panel label{display:grid;gap:6px;font-size:14px}#work-panel label:has(input[type=checkbox]){display:flex;align-items:center}
+#work-panel input,#work-panel select,#work-panel textarea{font:inherit;padding:10px;border:1px solid #a5b5a8;background:#fffdf7;border-radius:4px;max-width:100%;min-width:0}
+#work-panel textarea{min-height:100px;resize:vertical}#work-panel details{padding:14px 0;border-top:1px solid #cbd2c9}#work-panel summary{cursor:pointer;font-weight:bold}
+#work-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:45vh;overflow:auto}
+#runtime-chat{max-height:60vh;overflow:auto}#runtime-dialog{width:min(880px,90vw);max-height:85vh;overflow:auto;border:2px solid #487662;background:#f5f1e8;border-radius:12px}#runtime-dialog::backdrop{background:#14291c99}
+#runtime-notice{white-space:pre-wrap}#runtime-source-picker{max-height:150px;overflow:auto}
