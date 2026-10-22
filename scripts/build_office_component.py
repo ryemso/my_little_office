@@ -15,14 +15,24 @@ function renderAIUI(){
  const state=document.querySelector('#employee-task-state'),task=officeTasks.find(t=>t.role===selected);
  if(state)state.textContent=task?(labels[task.status]||task.status):'배정된 업무 없음';
 }
+let ownerAttention=0;
+function renderOwnerAlert(count){
+ ownerAttention=Number.isFinite(Number(count))?Math.max(0,Math.floor(Number(count))):0;
+ const owner=document.querySelector('[data-role="ceo"]'),badge=owner.querySelector('.owner-alert');
+ badge.hidden=ownerAttention===0;
+ badge.querySelector('.owner-count').textContent=ownerAttention>99?'99+':String(ownerAttention);
+ owner.classList.toggle('needs-attention',ownerAttention>0);
+ owner.setAttribute('aria-label',ownerAttention?'대표 검토·승인함 '+ownerAttention+'건 열기':'대표 검토·승인함 열기');
+ owner.setAttribute('title',ownerAttention?'처리할 사안 '+ownerAttention+'건 · 클릭해서 확인':'대표 검토·승인함');
+}
 function send(type,data){window.parent.postMessage({isStreamlitMessage:true,type,...data},'*');}
 window.addEventListener('message',event=>{
  if(event.source!==window.parent||event.data?.type!=='streamlit:render')return;
- const args=event.data.args||{};officeTasks=Array.isArray(args.tasks)?args.tasks:[];
+ const args=event.data.args||{};renderOwnerAlert(args.attention_count);officeTasks=Array.isArray(args.tasks)?args.tasks:[];
  if(roles.some(r=>r.id===args.selected))showRole(args.selected);else renderAIUI();
  send('streamlit:setFrameHeight',{height:Math.min(1150,document.body.scrollHeight+8)});
 });
-desks.addEventListener('click',event=>{const button=event.target.closest('[data-role]');if(button)send('streamlit:setComponentValue',{value:{role:button.dataset.role,event_id:Date.now()+':'+Math.random()},dataType:'json'});});
+desks.addEventListener('click',event=>{const button=event.target.closest('[data-role]');if(button)send('streamlit:setComponentValue',{value:{role:button.dataset.role,action:button.dataset.role==='ceo'?'open_inbox':'select_role',event_id:Date.now()+':'+Math.random()},dataType:'json'});});
 showRole('lead');
 send('streamlit:componentReady',{apiVersion:1});
 send('streamlit:setFrameHeight',{height:820});

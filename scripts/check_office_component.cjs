@@ -3,7 +3,7 @@ const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const html=fs.readFileSync('office/component/index.html','utf8');
 const script=html.match(/<script>([\s\S]*)<\/script>/)[1];
 const nodes=new Map(),messages=[],handlers={};
-function node(key){if(!nodes.has(key))nodes.set(key,{innerHTML:'',textContent:'',dataset:{},style:{},classList:{toggle(){},add(){},remove(){}},setAttribute(){},querySelector(s){return node(key+s)},addEventListener(event,handler){(this.events??={})[event]??=[];this.events[event].push(handler)}});return nodes.get(key)}
+function node(key){if(!nodes.has(key))nodes.set(key,{innerHTML:'',textContent:'',dataset:{},style:{},attributes:{},classList:{toggle(){},add(){},remove(){}},setAttribute(name,value){this.attributes[name]=value},querySelector(s){return node(key+s)},addEventListener(event,handler){(this.events??={})[event]??=[];this.events[event].push(handler)}});return nodes.get(key)}
 const parent={postMessage(message){messages.push(message)}};
 const context={document:{querySelector:node,querySelectorAll:()=>[],body:{scrollHeight:800}},window:{parent,addEventListener(type,handler){handlers[type]=handler}},performance:{now:()=>0},ResizeObserver:class{observe(){}},setTimeout,clearTimeout,requestAnimationFrame:()=>1,cancelAnimationFrame(){},Date,Math,console};
 vm.runInNewContext(script,context);
@@ -13,4 +13,15 @@ assert.equal(node('#employee-task-state').textContent,'작업 중');
 const listeners=node('#desks').events.click;
 listeners.forEach(handler=>handler({target:{closest:()=>({dataset:{role:'plan'}})}}));
 assert(messages.some(m=>m.type==='streamlit:setComponentValue'&&m.value.role==='plan'));
-console.log('Office component handshake, task state and avatar selection contract passed');
+handlers.message({source:parent,data:{type:'streamlit:render',args:{attention_count:3,tasks:[]}}});
+const badge=node('[data-role="ceo"].owner-alert');
+assert.equal(badge.hidden,false);
+assert.equal(badge.querySelector('.owner-count').textContent,'3');
+assert(node('[data-role="ceo"]').attributes['aria-label'].includes('3건'));
+listeners.forEach(handler=>handler({target:{closest:()=>({dataset:{role:'ceo'}})}}));
+assert(messages.some(m=>m.type==='streamlit:setComponentValue'&&m.value.action==='open_inbox'&&m.value.role==='ceo'));
+handlers.message({source:parent,data:{type:'streamlit:render',args:{attention_count:120,tasks:[]}}});
+assert.equal(badge.querySelector('.owner-count').textContent,'99+');
+handlers.message({source:parent,data:{type:'streamlit:render',args:{attention_count:0,tasks:[]}}});
+assert.equal(badge.hidden,true);
+console.log('Office component handshake, avatar selection and owner alert count/open/clear contracts passed');

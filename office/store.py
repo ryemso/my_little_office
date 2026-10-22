@@ -7,10 +7,11 @@ from pathlib import Path
 from scripts.local_office import ROLES
 from office.planning import parse_plan
 from office.conversation import Conversations
+from office.inbox import Decisions
 
 TERMINAL = ('review', 'completed', 'failed', 'interrupted', 'cancelled', 'quota_wait', 'blocked')
 
-class Store(Conversations):
+class Store(Conversations,Decisions):
     def __init__(self, root):
         self.root = Path(root)
         self.root.mkdir(parents=True, exist_ok=True)
@@ -35,6 +36,7 @@ class Store(Conversations):
         from office.knowledge import initialize
         initialize(self)
         self.initialize_conversations()
+        self.initialize_decisions()
         with self.connect() as con:
             if not self._get(con,'employee_access_v1',False):
                 con.execute('UPDATE projects SET network=1')

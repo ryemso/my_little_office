@@ -11,6 +11,7 @@ from office.store import Store
 from office import knowledge
 from office.sync import publish
 from office.workspaces import Workspace
+from office.inbox_ui import decision_dialog
 from scripts.local_office import ROLES, STATE, KST
 
 st.set_page_config(page_title='My Little Office · 출근 사무실', page_icon='🏡', layout='wide')
@@ -46,7 +47,8 @@ def live_office():
     columns = st.columns(3)
     columns[0].metric('근무 상태', status.get('message', '출근 전'))
     columns[1].metric('실행 대기', sum(t['status'] == 'queued' for t in tasks))
-    columns[2].metric('검토 대기', sum(t['status'] == 'review' and t['kind'] in ('single', 'plan') for t in tasks))
+    decisions=store.pending_decisions()
+    columns[2].metric('대표 확인',len(decisions))
     left, right = st.columns(2)
     if left.button('출근 / 근무 재개', disabled=status.get('on_duty', False), use_container_width=True):
         try:
@@ -58,8 +60,14 @@ def live_office():
     if right.button('퇴근 · 현재 작업 중단', disabled=not status.get('on_duty', False), use_container_width=True):
         store.pause()
         st.rerun()
-    event = scene(tasks=[{'role': t['role'], 'status': t['status']} for t in tasks], selected=st.session_state.selected_role, key='office_scene', default=None)
+    event = scene(tasks=[{'role': t['role'], 'status': t['status']} for t in tasks], selected=st.session_state.selected_role, attention_count=len(decisions), key='office_scene', default=None)
+    if st.button(f"❗ 대표 검토·승인함 ({len(decisions)})",key='open-owner-inbox',use_container_width=True):
+        st.session_state.inbox_open=True;st.rerun()
     if isinstance(event, dict) and event.get('event_id') != st.session_state.get('scene_event'):
+        if event.get('action')=='open_inbox' and event.get('role')=='ceo':
+            st.session_state.scene_event=event['event_id']
+            st.session_state.inbox_open=True
+            st.rerun()
         role = 'lead' if event.get('role') == 'ceo' else event.get('role')
         if role in ROLES:
             st.session_state.scene_event = event['event_id']
@@ -67,9 +75,12 @@ def live_office():
             st.rerun()
 
 live_office()
+if st.session_state.get('inbox_open'):decision_dialog(store)
 st.subheader('직원에게 업무 지시')
 st.caption('총괄이 개발·수정·테스트·문서·홍보·배포 업무를 배정합니다. 선택한 프로젝트에서 실제 파일을 만들고 명령을 실행하며, 게시·배포는 연결된 실행 작업을 사용합니다.')
 projects={p['id']:p for p in store.projects()}
+pending_project=st.session_state.pop('pending_project_id',None)
+if pending_project in projects:st.session_state.project_choice=pending_project
 project_id=st.selectbox('업무 프로젝트', list(projects), format_func=lambda value:projects[value]['name'], key='project_choice')
 if st.session_state.parent_task:
     original = store.get(st.session_state.parent_task)
