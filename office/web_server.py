@@ -119,7 +119,7 @@ class WebOffice:
             if b['on']:require_login();store.clock_in()
             else:store.pause()
         elif path=='/api/submit':
-            identifier=store.submit(b['role'],b['prompt'],identifier=b['request_id'],parent=b.get('parent'),delegate=bool(b.get('delegate')),project_id=b['project_id'],source_ids=b.get('source_ids',[]))
+            identifier=store.submit(b['role'],b['prompt'],identifier=b['request_id'],parent=b.get('parent'),delegate=bool(b.get('delegate')),project_id=b['project_id'],source_ids=b.get('source_ids',[]),browser_mode=b.get('browser_mode','standard'))
             return {'id':identifier,'thread':store.thread_id(identifier)}
         elif path=='/api/decision':
             task=self.task(b['id']);action=b['action']
