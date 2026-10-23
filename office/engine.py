@@ -222,8 +222,9 @@ def run_codex(store, task, end):
         denial_events=[e for e in events if e.get('type') in ('error','turn.failed') or
                        isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
         policy_block=bool(re.search(r'blocked by policy|rejected:.*policy|approval required|denied by.*policy',stderr_text+json.dumps(denial_events),re.I))
+        from office.runtime_requests import browser_access_denied
         browser_denied=any(e.get('type')=='item.completed' and isinstance(e.get('item'),dict) and e['item'].get('type')=='mcp_tool_call' and
-                           re.search(r'origin approval gate|user declined permission for this action',json.dumps({k:e['item'].get(k) for k in ('error','result','output','content')},ensure_ascii=False),re.I) for e in events)
+                           browser_access_denied(e['item']) for e in events)
         launch_failure=bool(re.search(r'CreateProcessWithLogonW failed|CreateProcess.*(?:failed|Rejected)|Failed to create parent directories',json.dumps(denial_events,ensure_ascii=False),re.I))
         failed=browser_denied or launch_failure or bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
         if failed:

@@ -168,8 +168,8 @@ class AppServerRun:
             item=params.get('item',{});kind=item.get('type')
             # Explicit origin/tool denial must not turn into success via a report.
             if kind=='mcpToolCall':
-                raw=json.dumps(item,ensure_ascii=False).lower()
-                if 'origin approval gate' in raw or 'user declined permission for this action' in raw:
+                from office.runtime_requests import browser_access_denied
+                if browser_access_denied(item):
                     self.denied=True
             if kind=='agentMessage':
                 from office.engine import safe_diagnostic

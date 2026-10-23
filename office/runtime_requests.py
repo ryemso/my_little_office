@@ -194,3 +194,14 @@ class RequestBroker:
         with self.store.connect() as con:
             con.execute("UPDATE runtime_requests SET state='disconnected',version=version+1 WHERE state IN ('pending','responding')")
             con.execute("UPDATE runtime_sessions SET state='disconnected' WHERE state IN ('starting','running','waiting_input')")
+
+
+def browser_access_denied(item):
+    """Classify a failed tool result, not quoted denial text in a read document."""
+    import re
+    result=item.get('result')
+    is_error=(item.get('status') in ('failed','error','declined') or bool(item.get('error')) or
+              isinstance(result,dict) and result.get('isError') is True)
+    if not is_error:return False
+    payload={key:item.get(key) for key in ('error','result','output','content')}
+    return bool(re.search(r'origin approval gate|user declined permission for this action',json.dumps(payload,ensure_ascii=False),re.I))

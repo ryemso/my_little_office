@@ -95,3 +95,9 @@ class RequestTests(unittest.TestCase):
         self.add();self.b.end(self.session);self.b.resolve(self.session,12)
         with self.store.connect() as con:state=con.execute('SELECT state FROM runtime_sessions WHERE id=?',(self.session,)).fetchone()[0]
         self.assertEqual(state,'disconnected')
+
+    def test_quoted_denial_in_successful_document_read_is_not_policy_failure(self):
+        from office.runtime_requests import browser_access_denied
+        message={'text':'과거 기록: The origin approval gate did not grant access'}
+        self.assertFalse(browser_access_denied({'status':'completed','result':message}))
+        self.assertTrue(browser_access_denied({'status':'failed','error':message}))
