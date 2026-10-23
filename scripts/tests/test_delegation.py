@@ -91,6 +91,27 @@ class DelegationTests(unittest.TestCase):
             with self.assertRaises(ValueError):parse_plan(json.dumps({'tasks':steps}))
         self.assertEqual(len(parse_plan(json.dumps({'tasks':[{'role':'dev','prompt':'업무를 수행해주세요'}]*6}))),6)
 
+    def test_browser_publication_without_registered_action_reaches_worker(self):
+        directive='qt0177 블로그에 저장된 4화를 브라우저로 공개 게시하세요'
+        root=self.store.submit('lead',directive,delegate=True)
+        self.worker.runner=lambda *args:{'status':'review','output':json.dumps({'tasks':[{'role':'dev','prompt':'연결된 브라우저에서 4화 중복 확인 후 공개 게시하고 재열람하세요'}]})}
+        self.worker.step()
+        child=self.store.children(root)[0]
+        self.assertEqual(child['status'],'queued')
+        self.assertEqual(child['action_json'],'')
+        self.assertIn(directive,instructions(self.store,child))
+        seen=[]
+        self.worker.runner=lambda store,task,end:seen.append(task['id']) or {'status':'review','output':'게시 결과 검토 필요'}
+        self.worker.step()
+        self.assertEqual(seen,[child['id']])
+
+    def test_missing_registered_action_is_still_rejected(self):
+        root=self.root()
+        self.worker.runner=lambda *args:{'status':'review','output':json.dumps({'tasks':[{'role':'dev','prompt':'등록 작업으로 게시하세요','action':'invented-publish'}]})}
+        self.worker.step()
+        self.assertEqual(self.store.get(root)['status'],'failed')
+        self.assertFalse(self.store.children(root))
+
     def test_schema_migration_preserves_old_task(self):
         with tempfile.TemporaryDirectory() as directory:
             db=sqlite3.connect(Path(directory)/'office.sqlite3')
