@@ -12,11 +12,14 @@ class Schedules:
                 id TEXT PRIMARY KEY,project_id TEXT NOT NULL,role TEXT NOT NULL,prompt TEXT NOT NULL,
                 next_due REAL NOT NULL,interval_seconds INTEGER NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,
                 last_task TEXT,error TEXT NOT NULL DEFAULT '')''')
+            if 'browser_mode' not in {row[1] for row in con.execute('PRAGMA table_info(schedules)')}:
+                con.execute("ALTER TABLE schedules ADD COLUMN browser_mode TEXT NOT NULL DEFAULT 'standard'")
 
     def schedules(self):
         with self.connect() as con:return [dict(row) for row in con.execute('SELECT * FROM schedules ORDER BY next_due')]
 
-    def add_schedule(self,project_id,role,prompt,due,interval_seconds=0):
+    def add_schedule(self,project_id,role,prompt,due,interval_seconds=0,browser_mode='standard'):
+        if browser_mode not in ('standard','ego'):raise ValueError('지원하지 않는 브라우저 모드입니다.')
         from scripts.local_office import ROLES
         if not self.project(project_id) or role not in ROLES or not 5<=len(prompt.strip())<=4500:
             raise ValueError('프로젝트·담당자·예약 지시를 확인하세요.')
@@ -24,8 +27,8 @@ class Schedules:
             raise ValueError('예약 시각과 반복 간격을 확인하세요 (반복 최소 5분).')
         identifier=str(uuid.uuid4())
         with self.connect() as con:
-            con.execute('INSERT INTO schedules(id,project_id,role,prompt,next_due,interval_seconds) VALUES(?,?,?,?,?,?)',
-                        (identifier,project_id,role,prompt.strip(),due,interval_seconds))
+            con.execute('INSERT INTO schedules(id,project_id,role,prompt,next_due,interval_seconds,browser_mode) VALUES(?,?,?,?,?,?,?)',
+                        (identifier,project_id,role,prompt.strip(),due,interval_seconds,browser_mode))
         return identifier
 
     def set_schedule(self,identifier,enabled):
@@ -55,7 +58,7 @@ class Schedules:
             identifier=str(uuid.uuid5(uuid.NAMESPACE_URL,'office-schedule:'+schedule['id']+':'+repr(slot)))
             stamp=datetime.fromtimestamp(slot,timezone.utc).isoformat()
             prompt=schedule['prompt']+'\n예약 회차 시각(UTC): '+stamp+'\n새 게시물은 이 회차를 반영한 고유 post_id를 사용하세요. 기존 글 재발행은 하지 마세요.'
-            self.submit(schedule['role'],prompt,identifier=identifier,delegate=schedule['role']=='lead',project_id=schedule['project_id'])
+            self.submit(schedule['role'],prompt,identifier=identifier,delegate=schedule['role']=='lead',project_id=schedule['project_id'],browser_mode=schedule['browser_mode'])
             interval=schedule['interval_seconds']
             following=slot+(int((now-slot)//interval)+1)*interval if interval else slot
             with self.connect() as con:
@@ -70,9 +73,9 @@ class Schedules:
             con.execute('BEGIN IMMEDIATE')
             task=con.execute('SELECT * FROM tasks WHERE id=?',(identifier,)).fetchone()
             if not task:raise ValueError('업무가 없습니다.')
-            if task['status']=='blocked':
-                task=con.execute("SELECT * FROM tasks WHERE root_id=? AND status IN ('failed','interrupted','quota_wait') ORDER BY ordinal LIMIT 1",(identifier,)).fetchone()
-            if not task or task['status'] not in ('failed','interrupted','quota_wait'):raise ValueError('다시 실행할 실패 단계가 없습니다.')
+            if task['status']=='blocked' and task['kind']=='plan':
+                task=con.execute("SELECT * FROM tasks WHERE root_id=? AND status IN ('failed','blocked','interrupted','quota_wait') ORDER BY ordinal LIMIT 1",(identifier,)).fetchone()
+            if not task or task['status'] not in ('failed','blocked','interrupted','quota_wait'):raise ValueError('다시 실행할 실패 단계가 없습니다.')
             root=task['root_id']
             if root and con.execute("SELECT 1 FROM tasks WHERE root_id=? AND status IN ('running','cancel_requested')",(root,)).fetchone():
                 raise ValueError('실행 중인 팀 업무가 끝난 뒤 재개하세요.')

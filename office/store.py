@@ -86,7 +86,7 @@ class Store(Conversations,Decisions,Schedules,Activity):
             con.execute("UPDATE tasks SET status='cancel_requested', updated=? WHERE status='running'", (time.time(),))
 
     def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=(), browser_mode='standard'):
-        if browser_mode not in ('standard', 'ego'): raise ValueError('지원하지 않는 브라우저 모드입니다.')
+        if not isinstance(browser_mode,str) or browser_mode not in ('standard', 'ego'): raise ValueError('지원하지 않는 브라우저 모드입니다.')
         prompt = prompt.strip()
         if role not in ROLES or not 5 <= len(prompt) <= 5000:
             raise ValueError('담당 직원을 선택하고 업무를 5~5000자로 입력하세요.')

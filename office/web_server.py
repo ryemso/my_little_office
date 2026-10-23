@@ -92,13 +92,16 @@ class WebOffice:
             if path=='/api/sources':
                 from office import knowledge
                 return {'sources':knowledge.sources(store,q.get('project',[None])[0]),'profile':knowledge.profile(store)}
+            if path=='/api/ego':
+                from office.ego_diagnostics import status
+                return status(store)
             if path=='/api/runtime':
                 from office.runtime_diagnostics import status
                 return status(store)
             if path=='/api/runtime/url':
                 from office.app_server import external_url
                 return {'url':external_url(store,q['id'][0])}
-            if path=='/api/health':return {'ok':True,'version':'0.19.3','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.20.0','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
@@ -118,6 +121,9 @@ class WebOffice:
         if path=='/api/clock':
             if b['on']:require_login();store.clock_in()
             else:store.pause()
+        elif path=='/api/ego-diagnose':
+            from office.ego_diagnostics import diagnose
+            return diagnose(store,page=b.get('page') is True)
         elif path=='/api/submit':
             identifier=store.submit(b['role'],b['prompt'],identifier=b['request_id'],parent=b.get('parent'),delegate=bool(b.get('delegate')),project_id=b['project_id'],source_ids=b.get('source_ids',[]),browser_mode=b.get('browser_mode','standard'))
             return {'id':identifier,'thread':store.thread_id(identifier)}
@@ -194,7 +200,7 @@ class WebOffice:
             if not hasattr(self,'setup_processes'):self.setup_processes={}
             process=self.setup_processes.get(kind)
             if not process or process.poll() is not None:self.setup_processes[kind]=start_setup(store.root,b['blog'] if kind=='login' else None)
-        elif path=='/api/schedule':return {'id':store.add_schedule(b['project_id'],b['role'],b['prompt'],float(b['due']),int(b.get('interval',0)))}
+        elif path=='/api/schedule':return {'id':store.add_schedule(b['project_id'],b['role'],b['prompt'],float(b['due']),int(b.get('interval',0)),browser_mode=b.get('browser_mode','standard'))}
         elif path=='/api/schedule-toggle':store.set_schedule(b['id'],bool(b['enabled']))
         elif path=='/api/presence-start':return {'url':self.worker.start_presence()}
         elif path=='/api/presence-stop':self.worker.stop_presence()

@@ -79,7 +79,8 @@ class Transport:
 
 
 class AppServerRun:
-    def __init__(self, store, task, transport, end):
+    def __init__(self, store, task, transport, end, timing=None):
+        self.timing=timing
         self.store=store;self.task=task;self.transport=transport;self.deadline=end
         self.broker=store.runtime;self.session=self.broker.session(task['id'])
         self.thread=None;self.turn=None;self.serial=0;self.responses={};self.pending={};self.events=[]
@@ -163,9 +164,11 @@ class AppServerRun:
         elif method=='serverRequest/resolved':
             if params.get('threadId')==self.thread:self._resolved(params['requestId'])
         elif method=='item/started':
+            if self.timing:self.timing.observe(method,params.get('item',{}))
             kind=params.get('item',{}).get('type')
             self.store.activity(self.task['id'],'syncing' if kind=='mcpToolCall' else 'executing','연결 도구 호출 중' if kind=='mcpToolCall' else '실행기 작업 시작')
         elif method=='item/completed':
+            if self.timing:self.timing.observe(method,params.get('item',{}))
             item=params.get('item',{});kind=item.get('type')
             # Explicit origin/tool denial must not turn into success via a report.
             if kind=='mcpToolCall':
@@ -229,16 +232,16 @@ def convert_item(item):
     if kind=='webSearch':return {'id':item.get('id'),'type':'web_search','action':{'observed':True}}
 
 
-def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None):
+def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None, browser_args=None, timing=None):
     info=inspect_cli(command)
     if not info['supported']:raise RuntimeError('대화형 실행기 검증 버전은 '+TESTED_VERSION+'입니다. 연결 진단에서 버전을 확인하세요.')
-    args=command+['app-server','--listen','stdio://','-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"']+(windows_args or [])
+    args=command+['app-server','--listen','stdio://','-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"']+(windows_args or [])+(browser_args or [])
     if writable:
         project=store.project(task['project_id'])
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end)
+    runner=AppServerRun(store,task,transport,end,timing=timing)
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
     try:return runner.run(prompt,cwd,writable,images)
     finally:

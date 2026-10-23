@@ -23,6 +23,10 @@ def executable(argv):
 
 def run_action(store,task,end):
     from office.engine import stop_process
+    from office.browser_modes import mode
+    selected=mode(task)
+    if selected=='ego':
+        return {'status':'blocked','error':'ego 모드에서는 등록된 별도 실행 경로로 자동 전환하지 않습니다. 이 연결 작업은 기본 모드의 새 업무로 명시해 지시하세요.','evidence':{'environment':{'browser_mode':selected}}}
     workspace=Workspace(store,task);project=workspace.prepare()
     action=json.loads(task['action_json'])
     if not action['automatic'] and workspace.fingerprint()!=task.get('approval_hash'):

@@ -17,7 +17,7 @@ class DiagnosticsTests(unittest.TestCase):
             kwargs['stdout'].write('\n'.join(__import__('json').dumps(e) for e in events)+'\n');kwargs['stdout'].flush()
             kwargs['stderr'].write(stderr);kwargs['stderr'].flush()
             return SimpleNamespace(stdin=io.StringIO(),returncode=0,poll=lambda:0)
-        with patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
+        with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
             return run_codex(store,task,time.time()+10)
 
     def test_plan_uses_inventory_without_shell_and_worker_keeps_shell(self):
@@ -113,7 +113,7 @@ class DiagnosticsTests(unittest.TestCase):
             def fake(args,**kwargs):
                 kwargs['stderr'].write('error: unexpected argument --unsupported');kwargs['stderr'].flush()
                 return SimpleNamespace(stdin=BrokenInput(),returncode=2,poll=lambda:2)
-            with patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
+            with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
                 result=run_codex(store,task,time.time()+10)
             self.assertEqual(result['status'],'failed')
             self.assertIn('unexpected argument',result['error'])
