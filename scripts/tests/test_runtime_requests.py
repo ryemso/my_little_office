@@ -121,3 +121,14 @@ class RequestTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.decision(identifier,content={'decision':'anything'})
         self.decision(identifier,content={'decision':'allow'})
         self.assertEqual(self.b.take_content(identifier),{'decision':'allow'})
+
+    def test_informational_cookie_and_credential_words_are_not_secret_inputs(self):
+        view=public_request('mcpServer/elicitation/request',{'mode':'form','message':'Allow browser access to http://127.0.0.1:8501/ ? Cookies and credentials may be present.', 'serverName':'browser','requestedSchema':{'type':'object','properties':{}}})
+        self.assertEqual(view['kind'],'form')
+        with self.assertRaisesRegex(ValueError,'필드 이름'):
+            public_request('mcpServer/elicitation/request',{'mode':'form','message':'Confirm access','serverName':'browser','requestedSchema':{'type':'object','properties':{'password':{'type':'boolean'}}}})
+
+    def test_actual_secret_and_url_query_in_message_still_blocked_with_stage(self):
+        for message in ['password=never-record-value','Confirm https://example.test/?code=never-record-value']:
+            with self.assertRaisesRegex(ValueError,'승인 안내문'):
+                public_request('mcpServer/elicitation/request',{'mode':'form','message':message,'serverName':'browser','requestedSchema':{'type':'object','properties':{}}})

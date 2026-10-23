@@ -33,24 +33,32 @@ def public_request(method, params):
     """Only deterministic supported forms; no arbitrary password/free-text fields."""
     import re
     forbidden = re.compile(r'password|passwd|token|cookie|secret|otp|credential|비밀번호|인증번호', re.I)
-    def safe_text(value):
+    def safe_text(value, stage='입력 필드', informational=False):
         value=str(value)
         redacted=clean(value)
-        if redacted!=value or forbidden.search(value) or ('://' in value and '?' in value):
-            raise ValueError('비밀 입력 가능성이 있는 요청은 공식 화면에서 직접 처리하세요.')
+        # A permission message can discuss cookies/credentials without requesting
+        # their values. Field identifiers and choices remain strictly filtered.
+        if redacted!=value:
+            raise ValueError('비밀 입력 검사: '+stage+'에 비밀값 형태 또는 과도한 길이가 있어 표시하지 않습니다.')
+        if not informational and forbidden.search(value):
+            raise ValueError('비밀 입력 검사: '+stage+'이 비밀정보 입력과 관련돼 공식 화면에서 처리해야 합니다.')
+        for url in re.findall(r'https?://[^\s<>"\']+',value):
+            # A trailing question mark in prose is not a URL query value.
+            if urlsplit(url.rstrip('.,);!?')).query:
+                raise ValueError('비밀 입력 검사: '+stage+'에 쿼리가 포함된 URL이 있어 공식 화면에서 확인해야 합니다.')
         return value
     result={'kind':'approval','message':'실행 중 사용자 확인이 필요합니다.','choices':['accept','decline','cancel']}
     if method not in SUPPORTED:raise ValueError('지원하지 않는 실행기 요청입니다.')
     if method in APPROVALS:
-        result['message']=safe_text(params.get('reason') or '요청한 작업 범위를 확인하세요.')
+        result['message']=safe_text(params.get('reason') or '요청한 작업 범위를 확인하세요.','요청 사유',informational=True)
         result['scope']={key:params[key] for key in ('command','cwd','networkApprovalContext','grantRoot') if key in params}
-        safe_text(json.dumps(result['scope'],ensure_ascii=False))
+        safe_text(json.dumps(result['scope'],ensure_ascii=False),'실행 범위')
     elif method=='item/permissions/requestApproval':
         # Network/filesystem permission profiles are not rendered as a generic yes/no.
         raise ValueError('세부 권한 요청은 아직 지원하지 않습니다. 실행 정책을 별도로 확인하세요.')
     elif method=='mcpServer/elicitation/request':
-        result['message']=safe_text(params.get('message','확인 요청'))
-        result['server']=safe_text(params.get('serverName',''))
+        result['message']=safe_text(params.get('message','확인 요청'),'승인 안내문',informational=True)
+        result['server']=safe_text(params.get('serverName',''),'도구 서버 이름',informational=True)
         if params.get('mode')=='url':
             result.update(kind='external',origin=origin(params['url']))
             result['message']='표시된 사이트의 공식 인증 화면에서 절차를 마친 뒤 확인하세요. '+result['message']
@@ -60,18 +68,18 @@ def public_request(method, params):
                 raise ValueError('지원하지 않는 확인 양식입니다.')
             fields=[]
             for key,spec in schema.get('properties',{}).items():
-                safe_text(key)
+                safe_text(key,'필드 이름')
                 if not isinstance(spec,dict):raise ValueError('지원하지 않는 확인 양식입니다.')
                 if spec.get('type')=='boolean':options=[True,False]
                 elif spec.get('type')=='string' and isinstance(spec.get('enum'),list) and 0<len(spec['enum'])<=20:
-                    options=[safe_text(option) for option in spec['enum']]
+                    options=[safe_text(option,'선택지 값') for option in spec['enum']]
                 elif spec.get('type')=='string' and isinstance(spec.get('oneOf'),list) and 0<len(spec['oneOf'])<=20:
                     variants=spec['oneOf']
                     if any(not isinstance(option,dict) or not isinstance(option.get('const'),str) or set(option)-{'const','title'} for option in variants):
                         raise ValueError('지원하지 않는 선택형 확인 양식입니다.')
-                    options=[safe_text(option['const']) for option in variants]
+                    options=[safe_text(option['const'],'선택지 값') for option in variants]
                 else:raise ValueError('자유 입력·비밀 입력 양식은 공식 화면에서 직접 처리하세요.')
-                fields.append({'id':key,'label':safe_text(spec.get('title') or key),'options':options})
+                fields.append({'id':key,'label':safe_text(spec.get('title') or key,'필드 설명',informational=True),'options':options})
             if not set(schema.get('required') or []).issubset({f['id'] for f in fields}):raise ValueError('확인 양식의 필수 필드 오류')
             result.update(kind='form',fields=fields)
         else:raise ValueError('지원하지 않는 MCP 확인 형식입니다.')
@@ -80,7 +88,7 @@ def public_request(method, params):
         for question in params.get('questions',[]):
             if question.get('isSecret') or not question.get('options'):raise ValueError('자유 입력·비밀 질문은 공식 화면에서 처리하세요.')
             options=[safe_text(option['label']) for option in question['options']]
-            fields.append({'id':safe_text(question['id']),'label':safe_text(question['question']),'options':options})
+            fields.append({'id':safe_text(question['id']),'label':safe_text(question['question'],'질문 안내문',informational=True),'options':options})
         if not 1<=len(fields)<=12:raise ValueError('질문 개수를 확인하세요.')
         result.update(kind='question',fields=fields)
     return result
