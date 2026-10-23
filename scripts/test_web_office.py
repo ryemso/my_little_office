@@ -37,6 +37,25 @@ def main():
                 deadline=time.time()+5
                 while store.tasks()[0]['status']!='completed' and time.time()<deadline:time.sleep(.05)
                 assert store.tasks()[0]['status']=='completed'
+                from office.app_server import AppServerRun,Transport
+                import os,sys
+                fixture=Path(__file__).resolve().parent/'fixtures/runtime_server.py'
+                def approval_runner(store,task,end):
+                    transport=Transport([sys.executable,'-u',str(fixture)],str(fixture.parent),dict(os.environ))
+                    result=AppServerRun(store,task,transport,end).run('오프라인 승인 검증',str(fixture.parent),True,[])
+                    return {'status':'review','output':result['text']}
+                worker.runner=approval_runner
+                page.locator('#runtime-command textarea').fill('두 요청에 대해 대표 승인을 전달하세요')
+                page.get_by_role('button',name='업무 지시',exact=True).click()
+                expect(page.locator('#runtime-status')).to_contain_text('승인/검토 2건',timeout=15000)
+                page.locator('[data-role="ceo"]').click()
+                expect(page.locator('[data-runtime-card]')).to_have_count(2)
+                page.get_by_role('button',name='이번 요청 허용',exact=True).first.click()
+                page.get_by_role('button',name='이번 요청 허용',exact=True).last.click()
+                page.get_by_role('button',name='닫기',exact=True).click()
+                expect(page.locator('#runtime-chat')).to_contain_text('승인 왕복 모형 완료',timeout=15000)
+                assert not store.runtime.list(),'resolved request must leave inbox'
+                print('Web office runtime approval: avatar badge, two cards, decisions, resolution and continuation passed')
                 page.get_by_role('button',name='퇴근',exact=True).click()
                 expect(page.locator('#runtime-status')).to_contain_text('퇴근')
                 print('Web office browser: pairing, clock-in, command, conversation, avatar inbox, review and clock-out passed')

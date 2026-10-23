@@ -41,6 +41,8 @@ class Store(Conversations,Decisions,Schedules,Activity):
         self.initialize_decisions()
         self.initialize_schedules()
         self.initialize_activity()
+        from office.runtime_requests import RequestBroker
+        self.runtime=RequestBroker(self)
         with self.connect() as con:
             if not self._get(con,'employee_access_v1',False):
                 con.execute('UPDATE projects SET network=1')
@@ -230,6 +232,7 @@ class Store(Conversations,Decisions,Schedules,Activity):
             if updated.rowcount:self._message(con,identifier,'reviewed','owner','status','결과 검토를 완료했습니다.')
 
     def recover(self):
+        self.runtime.recover()
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             for interrupted in con.execute("SELECT id FROM tasks WHERE status IN ('running','cancel_requested')").fetchall():

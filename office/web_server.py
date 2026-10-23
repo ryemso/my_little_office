@@ -81,7 +81,7 @@ class WebOffice:
             if path=='/api/state':
                 from office.presence import visitors
                 return {'office':store.status()[0],'projects':store.projects(),'tasks':store.tasks(),'activity':store.activity_board(),
-                        'decisions':store.pending_decisions(),'channels':store.channels(),'schedules':store.schedules(),'visitors':visitors(store)}
+                        'runtime_requests':store.runtime.list(),'decisions':store.pending_decisions(),'channels':store.channels(),'schedules':store.schedules(),'visitors':visitors(store)}
             if path=='/api/messages':return {'messages':store.messages(store.thread_id(q['task'][0]),before=int(q['before'][0]) if 'before' in q else None)}
             if path=='/api/detail':
                 task=self.task(q['task'][0]);workspace=Workspace(store,task);workspace.prepare()
@@ -92,7 +92,13 @@ class WebOffice:
             if path=='/api/sources':
                 from office import knowledge
                 return {'sources':knowledge.sources(store,q.get('project',[None])[0]),'profile':knowledge.profile(store)}
-            if path=='/api/health':return {'ok':True,'version':'0.18','runtime':'web-worker'}
+            if path=='/api/runtime':
+                from office.runtime_diagnostics import status
+                return status(store)
+            if path=='/api/runtime/url':
+                from office.app_server import external_url
+                return {'url':external_url(store,q['id'][0])}
+            if path=='/api/health':return {'ok':True,'version':'0.19','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
@@ -124,6 +130,20 @@ class WebOffice:
             elif action=='ack':store.acknowledge_decision(task['id'],b['version'])
             elif action=='apply':Workspace(store,task).apply()
             else:raise ValueError('지원하지 않는 조치입니다.')
+        elif path=='/api/runtime-mode':
+            if b.get('mode') not in ('exec','appserver'):raise ValueError('실행기 종류를 확인하세요.')
+            if store.has_active_work():raise ValueError('실행 중에는 실행기를 변경할 수 없습니다.')
+            if b['mode']=='appserver':
+                if b.get('acknowledged') is not True:raise ValueError('대화형 시험 모드와 사용자 승인 요청을 확인하세요.')
+                from office.runtime_diagnostics import diagnose
+                result=diagnose(store)
+                if not result.get('supported'):raise ValueError('연결 진단의 CLI 버전을 확인하세요.')
+            with store.connect() as con:store._put(con,'runtime_mode',b['mode'])
+        elif path=='/api/runtime-diagnose':
+            from office.runtime_diagnostics import diagnose
+            return diagnose(store)
+        elif path=='/api/runtime-decision':
+            store.runtime.decide(b['id'],b['version'],b['digest'],b['choice'],b.get('content'))
         elif path=='/api/project':return {'id':store.register_project(b['name'],b['path'],network=bool(b.get('network',True)))}
         elif path=='/api/network':store.set_project_network(b['id'],bool(b['enabled']))
         elif path=='/api/profile':

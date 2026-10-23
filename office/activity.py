@@ -55,7 +55,12 @@ class Activity:
                 elif status=='delegating':state='talking';detail='직원 배정·결과 취합 중'
                 elif status=='review':detail='제출됨 · 대표 검토 대기'
                 else:detail='완료 또는 중단된 업무'
-            board.append({'role':role,'name':label,'state':state,'label':STATES[state],'detail':detail,
+            waiting=False
+            if task:
+                with self.connect() as con:
+                    waiting=bool(con.execute("SELECT 1 FROM runtime_sessions WHERE task_id=? AND state='waiting_input'",(task['id'],)).fetchone())
+                if waiting:state='talking';detail='대표 입력 대기 · 실행 중 승인 요청'
+            board.append({'role':role,'name':label,'state':state,'label':'대표 입력 대기' if waiting else STATES[state],'detail':detail,
                           'stale':stale,'status':task['status'] if task else 'idle','task_id':task['id'] if task else None,
                           'heartbeat':task['heartbeat'] if task else None,'observed':task['observed'] if task else None})
         return board

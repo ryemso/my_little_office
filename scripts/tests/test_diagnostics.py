@@ -127,3 +127,10 @@ class DiagnosticsTests(unittest.TestCase):
             result=self.execute_fixture(store,task,[{'type':'turn.completed'}],'완료했습니다')
             self.assertEqual(result['status'],'failed')
             self.assertFalse(result['evidence']['artifacts'][0]['present'])
+
+    def test_browser_origin_denial_cannot_become_report_success(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(folder);store.clock_in();store.submit('dev','지정 페이지 접근을 확인하세요');task=store.claim()
+            result=self.execute_fixture(store,task,[{'type':'item.completed','item':{'type':'mcp_tool_call','server':'browser','tool':'js','status':'failed','error':{'message':'The origin approval gate did not grant access for http://127.0.0.1:8501'}}},{'type':'turn.completed'}],'거절 보고서를 작성했습니다')
+            self.assertEqual(result['status'],'blocked')
+            self.assertIn('브라우저 도구',result['error'])

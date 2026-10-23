@@ -163,28 +163,45 @@ def run_codex(store, task, end):
         if writable:
             args[-1:-1] = ['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
-        with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
-            process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
-            live=LiveEvents(store,task,stdout)
+        with store.connect() as con:
+            runtime_mode=store._get(con,'runtime_mode','exec')
+        environment['runtime']=runtime_mode
+        if runtime_mode=='appserver':
+            from office.app_server import execute
+            from types import SimpleNamespace
             try:
+                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args)
+            except Exception as error:
+                return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
+                        'evidence':{'environment':environment,'runtime_requests':store.runtime.list(active=False)}}
+            output.write_text(result['text'],encoding='utf-8')
+            stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
+            stderr.write_text('',encoding='utf-8')
+            process=SimpleNamespace(returncode=0)
+            environment.update(runtime_session=result['session'],runtime_thread=result['thread'],runtime_turn=result['turn'])
+        else:
+            with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
+                process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
+                live=LiveEvents(store,task,stdout)
                 try:
-                    process.stdin.write(prompt)
-                    process.stdin.close()
-                except (BrokenPipeError, OSError):
-                    # A CLI that rejects arguments can exit before it consumes stdin.
-                    # Continue to its exit status/stderr instead of hiding the cause.
-                    pass
-                while process.poll() is None:
-                    live.poll()
-                    current = store.get(task['id'])
-                    if current['status'] == 'cancel_requested' or time.time() >= end or stdout.stat().st_size + stderr.stat().st_size > 8_000_000:
+                    try:
+                        process.stdin.write(prompt)
+                        process.stdin.close()
+                    except (BrokenPipeError, OSError):
+                        # A CLI that rejects arguments can exit before it consumes stdin.
+                        # Continue to its exit status/stderr instead of hiding the cause.
+                        pass
+                    while process.poll() is None:
+                        live.poll()
+                        current = store.get(task['id'])
+                        if current['status'] == 'cancel_requested' or time.time() >= end or stdout.stat().st_size + stderr.stat().st_size > 8_000_000:
+                            stop_process(process)
+                            return {'status': 'interrupted', 'error': '중단 요청 또는 작업 시간·로그 크기 제한으로 멈췄습니다.'}
+                        time.sleep(.2)
+                finally:
+                    if process.poll() is None:
                         stop_process(process)
-                        return {'status': 'interrupted', 'error': '중단 요청 또는 작업 시간·로그 크기 제한으로 멈췄습니다.'}
-                    time.sleep(.2)
-            finally:
-                if process.poll() is None:
-                    stop_process(process)
-                live.poll(final=True)
+                    live.poll(final=True)
         events = []
         for line in stdout.read_text(encoding='utf-8', errors='replace').splitlines():
             try:
@@ -205,13 +222,16 @@ def run_codex(store, task, end):
         denial_events=[e for e in events if e.get('type') in ('error','turn.failed') or
                        isinstance(e.get('item'),dict) and e['item'].get('type')=='command_execution']
         policy_block=bool(re.search(r'blocked by policy|rejected:.*policy|approval required|denied by.*policy',stderr_text+json.dumps(denial_events),re.I))
+        browser_denied=any(e.get('type')=='item.completed' and isinstance(e.get('item'),dict) and e['item'].get('type')=='mcp_tool_call' and
+                           re.search(r'origin approval gate|user declined permission for this action',json.dumps({k:e['item'].get(k) for k in ('error','result','output','content')},ensure_ascii=False),re.I) for e in events)
         launch_failure=bool(re.search(r'CreateProcessWithLogonW failed|CreateProcess.*(?:failed|Rejected)|Failed to create parent directories',json.dumps(denial_events,ensure_ascii=False),re.I))
-        failed=launch_failure or bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
+        failed=browser_denied or launch_failure or bool(process.returncode) or turn_failed or not completed or not text.strip() or policy_block
         if failed:
             quota = re.search(r'usage.limit|rate.limit|quota.exceeded', diagnostics, re.I)
             event_errors=[e.get('message') or e.get('error') for e in events if e.get('type') in ('error','turn.failed')]
             reason=stderr_text.strip() or json.dumps(event_errors or denial_events,ensure_ascii=False)
-            category=('Codex 내부 명령 실행에 실패했습니다. 작업 경로·실행 환경 복구가 필요합니다.' if launch_failure else
+            category=('브라우저 도구 접근 승인이 거절됐습니다. 보고서 작성으로 원래 업무를 완료하지 않습니다.' if browser_denied else
+                      'Codex 내부 명령 실행에 실패했습니다. 작업 경로·실행 환경 복구가 필요합니다.' if launch_failure else
                       'Codex 명령이 실행 정책에 차단됐습니다. 로그인 오류가 아닙니다. 차단된 작업은 수행하지 않았습니다.' if policy_block else
                       'Codex 프로세스가 오류로 종료됐습니다.' if process.returncode else
                       'Codex 작업 턴이 실패했습니다.' if turn_failed else
@@ -220,7 +240,7 @@ def run_codex(store, task, end):
             error='Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else category+' (프로세스 종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)
             # Keep partial output for review; never turn a policy denial into success.
             safe_text=safe_diagnostic(text)
-            return {'status':'quota_wait' if quota else 'failed','error':error,'output':safe_text,'evidence':{'environment':environment}}
+            return {'status':'quota_wait' if quota else 'blocked' if browser_denied else 'failed','error':error,'output':safe_text,'evidence':{'environment':environment}}
         if re.search(r'sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN .*PRIVATE KEY-----', text):
             return {'status': 'failed', 'error': '비밀 키로 의심되는 결과의 표시를 차단했습니다. PC 로그를 확인하세요.'}
         usage = next((e.get('usage', {}) for e in reversed(events) if e.get('type') == 'turn.completed'), {})

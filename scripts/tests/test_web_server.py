@@ -48,3 +48,27 @@ class WebServerTests(unittest.TestCase):
                 archive=app.route('GET','/api/archive',{}, {'task':[identifier]})
                 self.assertEqual(archive[1],'application/zip')
             finally:app.close();worker.close()
+
+    def test_runtime_decision_auth_lifecycle_and_mode_gate(self):
+        with tempfile.TemporaryDirectory() as folder:
+            store=Store(folder);store.clock_in();identifier=store.submit('dev','사용자 확인 연결을 검사하세요');store.claim()
+            worker=Worker(store,start=False)
+            # Worker recovery interrupts old work; start a fresh run after recovery.
+            store.clock_in();identifier=store.submit('dev','새 승인 연결을 검사하세요');store.claim()
+            app=WebOffice(store,worker,0)
+            try:
+                session=store.runtime.session(identifier);store.runtime.bind(session,'thread','turn')
+                request=store.runtime.add(session,'request','item/commandExecution/requestApproval',{'threadId':'thread','turnId':'turn','command':'python --version'})
+                state=app.route('GET','/api/state',{},{});row=state['runtime_requests'][0]
+                self.assertEqual(row['task_id'],identifier)
+                with self.assertRaises(ValueError):app.route('POST','/api/runtime-mode',{'mode':'appserver','acknowledged':True},{})
+                payload={'id':request,'version':row['version'],'digest':row['digest'],'choice':'accept'}
+                opener=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+                req=urllib.request.Request(app.url+'/api/runtime-decision',data=json.dumps(payload).encode(),headers={'Authorization':'Bearer wrong'})
+                with self.assertRaises(urllib.error.HTTPError):opener.open(req,timeout=3)
+                self.assertEqual(store.runtime.list()[0]['state'],'pending')
+                app.route('POST','/api/runtime-decision',payload,{})
+                self.assertEqual(store.runtime.list()[0]['state'],'responding')
+                with self.assertRaises(ValueError):app.route('POST','/api/runtime-decision',payload,{})
+                store.runtime.resolve(session,'request');self.assertFalse(store.runtime.list())
+            finally:app.close();worker.close()

@@ -27,6 +27,10 @@ jobs:
       - run: node --check site/runtime.js
       - run: node scripts/check_office_component.cjs
       - run: python3 -m unittest discover -s scripts/tests -v
+      - name: Install pinned Codex for protocol handshake (no inference)
+        run: npm install --prefix "$RUNNER_TEMP/office-protocol" @openai/codex@0.163.0
+      - name: Validate real Codex schema and initialization
+        run: python -m office.protocol_probe --codex "$RUNNER_TEMP/office-protocol/node_modules/.bin/codex"
       - run: python -m playwright install --with-deps chromium
       - run: python -m scripts.test_browser_adapter
       - run: python -m scripts.test_web_office
