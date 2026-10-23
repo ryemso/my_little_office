@@ -64,7 +64,7 @@
     "scripts/local_office.py": "a7d75d17b7ff7d83b21f48f1a06a3732d317bc8f007a9023b91413d43cef5eac",
     "scripts/push_agent.py": "e5415c51ce0e9dd732a0f9004e38917aa29a779cff4c36f6283d78a3438ac747",
     "scripts/run_task.py": "b13723b7249d90f33cc48d3c9af98e823960513ad768685c5b0732a0540b3771",
-    "scripts/test_browser_adapter.py": "a8acc04f211332a4654ed9a513e4bc3fbe6efa3794843ab21ef021d9775bc28a",
+    "scripts/test_browser_adapter.py": "a3ef71ca58e55c473e86f67ca85122ff09ed7f9c789e74359c9ce32f42352998",
     "scripts/test_web_office.py": "2ab944984ed863696ea900278ec6fe7fc02346325bff4bb7ceecbfc6b596d0bd",
     "scripts/tests/test_access.py": "c2726b9867c33b3adb60e9eb5cdae02d3249e10a6087f05748988c96087fb402",
     "scripts/tests/test_activity.py": "92e95047c74cf33b9c40f424437ac5b4fa693e20cc0c041098f5956db82fc188",

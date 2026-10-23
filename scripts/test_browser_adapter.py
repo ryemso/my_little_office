@@ -40,7 +40,7 @@ def login_fixture(playwright, root):
             route.fulfill(content_type='text/html',body=body)
         elif 'authenticated=1' in route.request.url:
             route.fulfill(content_type='text/html',body=EDITOR)
-        else:route.fulfill(status=302,headers={'Location':'https://nid.naver.com/nidlogin.login'},body='')
+        else:route.fulfill(content_type='text/html',body="<script>location.replace('https://nid.naver.com/nidlogin.login')</script>")
     context.route('https://**/*',handle)
     class FixtureVault:
         def get(self, identifier):return 'fixture-user','fixture-password'
