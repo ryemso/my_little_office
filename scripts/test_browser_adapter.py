@@ -40,15 +40,19 @@ def login_fixture(playwright, root):
             route.fulfill(content_type='text/html',body=body)
         elif 'authenticated=1' in route.request.url:
             route.fulfill(content_type='text/html',body=EDITOR)
-        else:route.fulfill(status=302,headers={'Location':'https://nid.naver.com/nidlogin.login'})
+        else:route.fulfill(status=302,headers={'Location':'https://nid.naver.com/nidlogin.login'},body='')
     context.route('https://**/*',handle)
     class FixtureVault:
         def get(self, identifier):return 'fixture-user','fixture-password'
+    page=context.new_page()
     try:
-        ensure_authenticated(context.new_page(),accounts,account,'qt0177',vault_factory=FixtureVault)
+        ensure_authenticated(page,accounts,account,'qt0177',vault_factory=FixtureVault)
         assert accounts.get(account['id'])['state']=='READY'
         assert accounts.verify_audit()
         print('Real Chromium fixture: expired session, allowed login origin, automatic relogin and audit passed')
+    except Exception:
+        print('Login fixture diagnostics:',page.url,page.locator('input').evaluate_all('(nodes)=>nodes.map(node=>node.id)'),page.locator('button').evaluate_all('(nodes)=>nodes.map(node=>node.id)'))
+        raise
     finally:context.close();browser.close()
 
 
