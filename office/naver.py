@@ -190,6 +190,7 @@ def run_editor(page,root,work,blog,name,mode,task_id,checkpoint=lambda:None):
     write_receipt(receipt_path,receipt)
     evidence=Path(root)/'publishing'/(key+'-'+receipt['state']+'.png')
     try:
+        if not post_url(page.url,blog):return receipt
         page.screenshot(path=str(evidence),full_page=False)
         receipt['screenshot']=str(evidence)
     except Exception:receipt['screenshot_error']='화면 저장 실패. 원격 검증 결과는 유지됩니다.'
@@ -201,17 +202,22 @@ def _execute_browser(store,task,workspace,argv,end):
     _,blog,name,mode=argv[:4]
     approved_fingerprint=workspace.fingerprint()
     action=json.loads(task['action_json'])
-    if not action['automatic'] and approved_fingerprint!=task.get('approval_hash'):
+    if (mode=='publish' or not action['automatic']) and approved_fingerprint!=task.get('approval_hash'):
         raise ValueError('승인 이후 파일이 바뀌었습니다. 다시 검토하세요.')
     def checkpoint():
         if time.time()>=end or store.get(task['id'])['status']=='cancel_requested':raise RuntimeError('네이버 작업 중단 요청')
         if workspace.fingerprint()!=approved_fingerprint:raise RuntimeError('네이버 실행 중 승인 원문이 변경됐습니다. 다시 검토하세요.')
     try:from playwright.sync_api import sync_playwright
     except ImportError:raise RuntimeError('업데이트로 Playwright를 설치한 뒤 브라우저 실행 준비 버튼을 누르세요.') from None
-    with profile_lock(store.root),sync_playwright() as playwright:
-        context=playwright.chromium.launch_persistent_context(str(store.root/'naver-browser'),headless=False)
+    from office.browser_accounts import BrowserAccounts
+    from office.browser_session import ensure_authenticated
+    accounts=BrowserAccounts(store);account=accounts.register(blog_id(blog))
+    with profile_lock(store.root/'browser-locks'/account['id']),sync_playwright() as playwright:
+        context=playwright.chromium.launch_persistent_context(str(accounts.profile(account)),headless=False)
         try:
             page=context.new_page();page.set_default_timeout(15000)
+            ensure_authenticated(page,accounts,account,blog)
+            accounts.state(account['id'],'TASK_RUNNING')
             if mode=='verify' and len(argv)==5:
                 post,images,digest=read_post(workspace.work,name)
                 verify_article(page,argv[4],blog_id(blog),post)
@@ -224,6 +230,8 @@ def _execute_browser(store,task,workspace,argv,end):
             else:
                 if len(argv)!=4:raise ValueError('네이버 연결 인자 오류')
                 result=run_editor(page,store.root,workspace.work,blog,name,mode,task['id'],checkpoint)
+            accounts.state(account['id'],'READY')
+            accounts.event(account['id'],'RESULT_VERIFIED')
         finally:context.close()
     return {'status':'review','output':('네이버 임시 저장 검증 완료' if result['state']=='draft' else '네이버 게시물 원문 검증 완료')+'\n'+result.get('url',result['title']),
             'error':'','evidence':{'action':{'type':'naver',**result},'changes':workspace.changes()}}
@@ -263,13 +271,17 @@ def login(root,blog):
     from playwright.sync_api import sync_playwright
     root=Path(root)
     status=root/'naver-login.json'
+    from office.store import Store
+    from office.browser_accounts import BrowserAccounts
+    from office.browser_session import ensure_authenticated
+    accounts=BrowserAccounts(Store(root));account=accounts.register(blog_id(blog))
     try:
-        with profile_lock(root),sync_playwright() as playwright:
-            context=playwright.chromium.launch_persistent_context(str(root/'naver-browser'),headless=False)
+        with profile_lock(root/'browser-locks'/account['id']),sync_playwright() as playwright:
+            context=playwright.chromium.launch_persistent_context(str(accounts.profile(account)),headless=False)
             try:
-                page=context.new_page();page.goto('https://blog.naver.com/'+blog_id(blog)+'/postwrite')
+                page=context.new_page()
                 write_receipt(status,{'status':'waiting','message':'열린 브라우저에서 직접 로그인하세요. 인증·CAPTCHA는 직접 처리하세요.'})
-                page.locator(TITLE).wait_for(state='visible',timeout=600000)
+                ensure_authenticated(page,accounts,account,blog,manual=True)
                 write_receipt(status,{'status':'ready','message':'글쓰기 화면 접근 확인. 로그인 창을 닫았습니다.','updated':time.time()})
             finally:context.close()
     except Exception as error:

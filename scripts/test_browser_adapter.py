@@ -24,9 +24,38 @@ document.querySelector('#final').onclick=()=>{localStorage.setItem('published',J
 ARTICLE='''<!doctype html><html lang="ko"><meta charset="utf-8"><body><h1 id="title"></h1><article id="body"></article><script>const post=JSON.parse(localStorage.getItem('published'));document.querySelector('#title').textContent=post.title;document.querySelector('#body').textContent=post.body;</script></body></html>'''
 
 
+def login_fixture(playwright, root):
+    from office.store import Store
+    from office.browser_accounts import BrowserAccounts
+    from office.browser_session import ensure_authenticated
+    accounts=BrowserAccounts(Store(root/'auth'))
+    account=accounts.register('qt0177')
+    with accounts.store.connect() as con:
+        con.execute('UPDATE browser_accounts SET auto_login=1 WHERE id=?',(account['id'],))
+    browser=playwright.chromium.launch(headless=True)
+    context=browser.new_context()
+    def handle(route):
+        if 'nid.naver.com' in route.request.url:
+            body='''<input id="id"><input id="pw" type="password"><button id="log.login" onclick="location.href='https://blog.naver.com/qt0177/postwrite?authenticated=1'">login</button>'''
+            route.fulfill(content_type='text/html',body=body)
+        elif 'authenticated=1' in route.request.url:
+            route.fulfill(content_type='text/html',body=EDITOR)
+        else:route.fulfill(status=302,headers={'Location':'https://nid.naver.com/nidlogin.login'})
+    context.route('https://**/*',handle)
+    class FixtureVault:
+        def get(self, identifier):return 'fixture-user','fixture-password'
+    try:
+        ensure_authenticated(context.new_page(),accounts,account,'qt0177',vault_factory=FixtureVault)
+        assert accounts.get(account['id'])['state']=='READY'
+        assert accounts.verify_audit()
+        print('Real Chromium fixture: expired session, allowed login origin, automatic relogin and audit passed')
+    finally:context.close();browser.close()
+
+
 def main():
     with tempfile.TemporaryDirectory() as folder,sync_playwright() as playwright:
-        root=Path(folder);work=root/'work';work.mkdir()
+        root=Path(folder);login_fixture(playwright,root)
+        work=root/'work';work.mkdir()
         (work/'post.json').write_text(json.dumps({'post_id':'fixture-1','title':'연결 검증 제목','body':'실제 브라우저 입력 검증\n두 번째 문단'},ensure_ascii=False),encoding='utf-8')
         browser=playwright.chromium.launch(headless=True)
         context=browser.new_context()

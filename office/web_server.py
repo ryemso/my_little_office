@@ -92,10 +92,13 @@ class WebOffice:
             if path=='/api/sources':
                 from office import knowledge
                 return {'sources':knowledge.sources(store,q.get('project',[None])[0]),'profile':knowledge.profile(store)}
-            if path=='/api/health':return {'ok':True,'version':'0.17','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.18','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
+            if path=='/api/browser-accounts':
+                from office.browser_accounts import BrowserAccounts
+                return {'accounts':BrowserAccounts(store).list()}
             if path=='/api/connections':
                 from office.connections import connection_status
                 return connection_status()
@@ -158,6 +161,12 @@ class WebOffice:
             argv=['office:naver',blog,name,'verify',url] if url else ['office:naver',blog,name,'recover-draft']
             store.register_action(project['id'],'네이버 기존 결과 확인·복구','https://blog.naver.com/'+blog,argv,automatic=False)
         elif path=='/api/actions':return {'actions':store.actions(b['project_id'])}
+        elif path=='/api/browser-account':
+            from office.browser_accounts import BrowserAccounts
+            accounts=BrowserAccounts(store)
+            account=accounts.register(b['blog'])
+            if 'auto_login' in b:accounts.opt_in(account['id'],bool(b['auto_login']))
+            return {'account':accounts.get(account['id'])}
         elif path=='/api/browser':
             from office.browser_setup import start_setup
             kind=b['kind']

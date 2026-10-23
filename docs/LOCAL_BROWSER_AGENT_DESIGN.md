@@ -1,7 +1,7 @@
 # My Little Office — Windows Local Browser Agent 설계 (v0.18 제안)
 
 작성일: 2026-10-23
-상태: 설계 완료 / 구현·Windows 실사용 검증 전
+상태: v0.18 1차 구현 / Windows 실사용 검증 전
 기준: 기존 v0.17, docs/AUTOMATION.md, docs/WEB_OFFICE.md
 참고 설계: pickle-com/credential-enclave (권한 최소화·비밀정보 분리·감사 로그의 원칙만 참조, Nitro Enclave 자체 미도입)
 
@@ -99,3 +99,12 @@ P8 추가 사이트: 도메인·기능·정책을 사이트별 adapter로 추가
 ## 9. 현재 사실과 미구현 구분
 
 기존 docs/AUTOMATION.md는 네이버 전용 브라우저 수동 로그인·세션 재사용·임시저장/발행·중복방지·결과 검증을 기술한다. 단, 사용자 PC 로그인 및 실게시 검증은 완료된 것으로 보지 않는다. 이 문서의 비밀번호 자동 입력, 공통 사이트 계정 금고, generic BrowserWorker, 세밀한 정책 게이트는 신규 설계이며 현재 구현 완료를 의미하지 않는다.
+
+
+## 10. v0.18 1차 구현 (2026-10-23)
+
+구현: 네이버 계정별 프로필·프로세스 잠금, 기존 첫 프로필 이전, SQLite 로그인 상태·실패 횟수·쿨다운, Windows Credential Manager 등록/교체/삭제 CLI, 계정별 opt-in, 허용 로그인 호스트·필드 검사, 수동 인증 전환, 감사 해시 체인 및 검증, 계정 관리 API/UI. 기존 승인 지문·불확실 발행 복구·중복 방지를 재사용하며 publish는 automatic 설정과 관계없이 승인 지문을 검사한다. 인증 화면의 스크린샷은 저장하지 않는다.
+
+미완료: 자격증명 실행기와 Codex의 별도 Windows 사용자/ACL 격리, 범용 사이트 adapter/action schema, 별도 browser_actions/user_attention 테이블, 계정 인증 요청의 대표 아바타 승인함 연계, 작업 도중 세션 만료의 자동 체크포인트 재개, Windows OS 재시작/실사용 네이버 검증. 현재 인증 요청은 계정 상태 조회와 기존 실패 업무 기록에 표시되며 로그인 후 수동 재개한다. 기존 업무 DB·승인·게시 영수증을 재사용하고 모든 제안 테이블을 새로 만들지는 않았다.
+
+검증과 남은 환경 제한은 WORKLOG.md에 기록한다. 이 1차 구현을 전체 P0~P8 인수 완료로 해석하지 않는다.
