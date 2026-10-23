@@ -149,6 +149,13 @@ def run_codex(store, task, end):
         if writable:prompt+='\n제작·개발 지시는 제안으로 끝내지 말고 프로젝트 작업 사본에 검토 가능한 실제 결과물을 작성하세요. 사용자가 제안·설명만 요청한 경우는 예외입니다. 결과 파일 경로와 실제 검증 결과를 제출하세요.\n'
         if task.get("kind") not in ("plan", "report"):
             prompt += EXTERNAL_EXECUTION_POLICY
+        try:
+            browser_mode=json.loads(task.get('context_json') or '{}').get('browser_mode','standard')
+        except (ValueError,TypeError): browser_mode='standard'
+        if browser_mode=='ego':
+            prompt+='\n브라우저 모드: ego. ego-browser 스킬이 실제로 설치되고 접근 허용된 경우에만 사용하세요. 없는 기능을 성공으로 표시하지 마세요. 비밀번호를 프롬프트나 도구 인자로 보내지 마세요.\n'
+        else:
+            prompt+='\n브라우저 모드: 기본. ego-browser를 사용하지 마세요. 등록된 기존 Playwright 작업이나 공개 웹 검색 등 허용된 기존 수단만 사용하세요.\n'
         prompt += instructions(store, task)
         prompt+='\n필수 산출물 파일: '+task.get('expected_json','[]')+' · 이 파일이 없거나 비어 있으면 검증 실패로 처리합니다.\n'
         prompt += '\n현재 업무:\n' + task['prompt']
