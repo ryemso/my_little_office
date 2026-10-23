@@ -2,6 +2,8 @@
 import time
 from office.browser_accounts import BrowserAccounts, require_origin
 
+LOGIN_BUTTON = r'#log\.login, #loginBtn_column:visible, #loginBtn_row:visible'
+
 
 def challenge(page):
     if page.locator('#captcha, .captcha, input[name="captcha"]').count(): return 'CAPTCHA_REQUIRED'
@@ -28,7 +30,7 @@ def ensure_authenticated(page, accounts, account, blog, manual=False, vault_fact
         raise RuntimeError('LOGIN_REQUIRED: 연결 관리에서 해당 계정에 직접 로그인하세요.')
     require_origin(page.url, {'nid.naver.com'})
     # Never type into an unrecognised page, even if a redirect has the right host.
-    if page.locator('#id').count()!=1 or page.locator('#pw').count()!=1 or page.locator(r'#log\.login').count()!=1:
+    if page.locator('#id').count()!=1 or page.locator('#pw').count()!=1 or page.locator(LOGIN_BUTTON).count()!=1:
         accounts.state(account['id'],'NEEDS_USER');raise RuntimeError('PAGE_CHANGED: 로그인 화면을 확인하세요.')
     if vault_factory is None:
         from office.secret_store import SecretStore
@@ -43,7 +45,7 @@ def ensure_authenticated(page, accounts, account, blog, manual=False, vault_fact
         require_origin(page.url, {'nid.naver.com'})
         page.locator('#pw').fill(secret[1])
         require_origin(page.url, {'nid.naver.com'})
-        page.locator(r'#log\.login').click()
+        page.locator(LOGIN_BUTTON).click()
         page.locator(TITLE).wait_for(state='visible',timeout=15000)
     except Exception:
         accounts.state(account['id'],'AUTH_FAILED',failed=True)

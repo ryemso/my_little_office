@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock
 from office.store import Store
 from office.browser_accounts import BrowserAccounts, require_origin
-from office.browser_session import ensure_authenticated
+from office.browser_session import ensure_authenticated, LOGIN_BUTTON
 from office.naver import TITLE
 
 
@@ -18,7 +18,7 @@ class BrowserAccountTests(unittest.TestCase):
         page=Mock();page.url='https://nid.naver.com/nidlogin.login'
         title=Mock()
         if not authenticated:title.wait_for.side_effect=RuntimeError('not logged in')
-        fields={key:Mock() for key in ['#id','#pw',r'#log\.login']}
+        fields={key:Mock() for key in ['#id','#pw',LOGIN_BUTTON]}
         for field in fields.values():field.count.return_value=1
         empty=Mock();empty.count.return_value=0
         page.locator.side_effect=lambda selector: title if selector==TITLE else fields.get(selector,empty)
