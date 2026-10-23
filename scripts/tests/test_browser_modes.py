@@ -74,6 +74,20 @@ class BrowserModeTests(unittest.TestCase):
         self.assertEqual(result['status'],'blocked')
         self.assertIn('자동 전환',result['error'])
 
+    def test_ego_keeps_registered_github_result_publish_route(self):
+        from office.actions import run_action
+        project=self.store.company_project()
+        action=self.store.register_action(project,'결과 반영','owner/repo',['office:github','owner/repo'],automatic=True)
+        root=self.store.submit('lead','결과를 GitHub에 반영하세요',project_id=project,delegate=True,browser_mode='ego')
+        self.store.claim()
+        self.store.finish(root,{'status':'review','output':json.dumps({'tasks':[{'role':'dev','prompt':'등록한 GitHub 결과 반영을 실행하세요','action':action}]})})
+        task=self.store.claim()
+        with patch('office.github_publish.publish_workspace',return_value={'url':'https://github.com/owner/repo/commit/fixture','branch':'office/fixture','verified':True}) as publish:
+            result=run_action(self.store,task,time.time()+10)
+        publish.assert_called_once()
+        self.assertEqual(result['status'],'review')
+        self.assertTrue(result['evidence']['action']['verified'])
+
     def test_schedule_mode_is_saved_and_reused(self):
         project=self.store.company_project()
         schedule=self.store.add_schedule(project,'dev','사이트 내용을 확인하세요',time.time()-1,browser_mode='ego')
