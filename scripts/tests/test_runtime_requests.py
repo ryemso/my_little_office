@@ -101,3 +101,23 @@ class RequestTests(unittest.TestCase):
         message={'text':'과거 기록: The origin approval gate did not grant access'}
         self.assertFalse(browser_access_denied({'status':'completed','result':message}))
         self.assertTrue(browser_access_denied({'status':'failed','error':message}))
+
+    def test_approval_history_is_scoped_to_current_task(self):
+        identifier=self.add();self.decision(identifier);self.b.resolve(self.session,12)
+        self.assertEqual(len(self.b.list(False,task_id=self.task)),1)
+        self.assertEqual(self.b.list(False,task_id='another-task'),[])
+
+    def test_rejected_form_keeps_shape_without_values(self):
+        params={'mode':'openai/form','requestedSchema':{'type':'object','properties':{'password':{'type':'string','default':'never-record-this'}}}}
+        diagnostic=self.b.reject(self.session,'mcpServer/elicitation/request',params,ValueError('자유 입력·비밀 입력 양식은 공식 화면에서 직접 처리하세요.'))
+        self.assertEqual(diagnostic['shape']['field_shapes'][0]['type'],'string')
+        text=json.dumps(self.b.rejections(self.task))
+        self.assertNotIn('never-record-this',text);self.assertNotIn('password',text)
+
+    def test_titled_const_enum_uses_same_strict_selection_validation(self):
+        params={'threadId':'thread','serverName':'browser','mode':'openai/form','message':'사이트 접근 확인',
+                'requestedSchema':{'type':'object','properties':{'decision':{'type':'string','oneOf':[{'const':'allow','title':'이번에 허용'},{'const':'deny','title':'거절'}]}}}}
+        identifier=self.b.add(self.session,22,'mcpServer/elicitation/request',params)
+        with self.assertRaises(ValueError):self.decision(identifier,content={'decision':'anything'})
+        self.decision(identifier,content={'decision':'allow'})
+        self.assertEqual(self.b.take_content(identifier),{'decision':'allow'})

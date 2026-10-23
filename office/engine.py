@@ -173,7 +173,7 @@ def run_codex(store, task, end):
                 result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args)
             except Exception as error:
                 return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
-                        'evidence':{'environment':environment,'runtime_requests':store.runtime.list(active=False)}}
+                        'evidence':{'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id'])}}
             output.write_text(result['text'],encoding='utf-8')
             stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
             stderr.write_text('',encoding='utf-8')

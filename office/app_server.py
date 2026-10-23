@@ -104,10 +104,11 @@ class AppServerRun:
         key=json.dumps(identifier)
         if key in self.pending:raise RuntimeError('중복 실행기 승인 ID')
         try:request_id=self.broker.add(self.session,identifier,method,params,self.max_wait)
-        except ValueError:
+        except ValueError as error:
+            diagnostic=self.broker.reject(self.session,method,params,error)
             # Unknown/secret-input requests never become generic approval prompts.
             self.transport.send({'id':identifier,'error':{'code':-32602,'message':'This client cannot safely handle this request; use the official host UI.'}})
-            self.failure='지원하지 않는 요청 또는 외부 인증 화면 확인이 필요합니다. 권한을 우회하지 않았습니다.'
+            self.failure='실행기 요청을 처리하지 못했습니다. 요청: '+diagnostic['method']+' · 형식: '+diagnostic['shape']['mode']+' · 사유: '+diagnostic['reason']+' 권한을 우회하지 않았습니다.'
             return
         self.pending[key]={'id':identifier,'request':request_id,'method':method,'params':params,'sent':False,'created':time.time()}
         if self.wait_started is None:self.wait_started=time.monotonic()

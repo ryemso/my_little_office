@@ -56,14 +56,20 @@ def public_request(method, params):
             result['message']='표시된 사이트의 공식 인증 화면에서 절차를 마친 뒤 확인하세요. '+result['message']
         elif params.get('mode') in ('form','openai/form','openaiForm'):
             schema=params.get('requestedSchema',{})
-            if schema.get('type')!='object' or len(schema.get('properties',{}))>12:
+            if not isinstance(schema,dict) or schema.get('type')!='object' or not isinstance(schema.get('properties',{}),dict) or len(schema.get('properties',{}))>12:
                 raise ValueError('지원하지 않는 확인 양식입니다.')
             fields=[]
             for key,spec in schema.get('properties',{}).items():
                 safe_text(key)
+                if not isinstance(spec,dict):raise ValueError('지원하지 않는 확인 양식입니다.')
                 if spec.get('type')=='boolean':options=[True,False]
                 elif spec.get('type')=='string' and isinstance(spec.get('enum'),list) and 0<len(spec['enum'])<=20:
                     options=[safe_text(option) for option in spec['enum']]
+                elif spec.get('type')=='string' and isinstance(spec.get('oneOf'),list) and 0<len(spec['oneOf'])<=20:
+                    variants=spec['oneOf']
+                    if any(not isinstance(option,dict) or not isinstance(option.get('const'),str) or set(option)-{'const','title'} for option in variants):
+                        raise ValueError('지원하지 않는 선택형 확인 양식입니다.')
+                    options=[safe_text(option['const']) for option in variants]
                 else:raise ValueError('자유 입력·비밀 입력 양식은 공식 화면에서 직접 처리하세요.')
                 fields.append({'id':key,'label':safe_text(spec.get('title') or key),'options':options})
             if not set(schema.get('required') or []).issubset({f['id'] for f in fields}):raise ValueError('확인 양식의 필수 필드 오류')
@@ -99,6 +105,9 @@ class RequestBroker:
                 CREATE TABLE IF NOT EXISTS runtime_sessions (
                     id TEXT PRIMARY KEY,task_id TEXT NOT NULL,epoch TEXT NOT NULL,
                     state TEXT NOT NULL,thread_id TEXT,turn_id TEXT,updated REAL NOT NULL);
+                CREATE TABLE IF NOT EXISTS runtime_rejections (
+                    id TEXT PRIMARY KEY,session_id TEXT NOT NULL,method TEXT NOT NULL,
+                    reason TEXT NOT NULL,shape_json TEXT NOT NULL,created REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS runtime_requests (
                     id TEXT PRIMARY KEY,session_id TEXT NOT NULL,rpc_id TEXT NOT NULL,
                     method TEXT NOT NULL,view_json TEXT NOT NULL,digest TEXT NOT NULL,
@@ -139,11 +148,41 @@ class RequestBroker:
         self.store.activity(row['task_id'],'talking','대표 입력 대기 · 실행 중 요청')
         return identifier
 
-    def list(self, active=True):
-        query="WHERE r.state IN ('pending','responding')" if active else ''
+    def list(self, active=True, task_id=None, session_id=None):
+        conditions=[];arguments=[]
+        if active:conditions.append("r.state IN ('pending','responding')")
+        if task_id is not None:conditions.append('s.task_id=?');arguments.append(task_id)
+        if session_id is not None:conditions.append('s.id=?');arguments.append(session_id)
+        query=('WHERE '+' AND '.join(conditions)) if conditions else ''
         with self.store.connect() as con:
-            rows=con.execute('SELECT r.*,s.task_id,s.state AS session_state,t.role FROM runtime_requests r JOIN runtime_sessions s ON s.id=r.session_id LEFT JOIN tasks t ON t.id=s.task_id '+query+' ORDER BY r.created DESC LIMIT 200').fetchall()
+            rows=con.execute('SELECT r.*,s.task_id,s.state AS session_state,t.role FROM runtime_requests r JOIN runtime_sessions s ON s.id=r.session_id LEFT JOIN tasks t ON t.id=s.task_id '+query+' ORDER BY r.created DESC LIMIT 200',arguments).fetchall()
         return [dict(id=r['id'],task_id=r['task_id'],role=r['role'],method=r['method'],state=r['state'],session_state=r['session_state'],version=r['version'],digest=r['digest'],expires=r['expires'],view=json.loads(r['view_json']),choice=r['choice']) for r in rows]
+
+    def reject(self, session, method, params, error):
+        # Shape only: omit property names, labels, defaults, enum values and URLs.
+        schema=params.get('requestedSchema')
+        shape={'mode':params.get('mode') if params.get('mode') in ('url','form','openai/form','openaiForm') else 'other',
+               'schema_type':schema.get('type') if isinstance(schema,dict) and schema.get('type') in ('object','string','boolean','array') else 'other',
+               'field_shapes':[]}
+        if isinstance(schema,dict) and isinstance(schema.get('properties'),dict):
+            for spec in list(schema['properties'].values())[:20]:
+                if not isinstance(spec,dict):shape['field_shapes'].append({'type':'invalid'});continue
+                shape['field_shapes'].append({'type':spec.get('type') if spec.get('type') in ('string','boolean','array','number','integer','object') else 'other',
+                                              'enum':isinstance(spec.get('enum'),list),'oneOf':isinstance(spec.get('oneOf'),list)})
+        safe_method=method if method in SUPPORTED else 'unsupported_method'
+        # These are fixed validator messages, never raw exception/page text.
+        reason=clean(error)
+        allowed_reasons=('지원하지 않는','비밀 입력','세부 권한','자유 입력','확인 양식','질문 개수','살아 있는','다른 업무')
+        if not reason.startswith(allowed_reasons):reason='요청 형식 검증에 실패했습니다.'
+        identifier=str(uuid.uuid4())
+        with self.store.connect() as con:
+            con.execute('INSERT INTO runtime_rejections VALUES(?,?,?,?,?,?)',(identifier,session,safe_method,reason,json.dumps(shape),time.time()))
+        return {'method':safe_method,'reason':reason,'shape':shape}
+
+    def rejections(self, task_id):
+        with self.store.connect() as con:
+            rows=con.execute('SELECT r.* FROM runtime_rejections r JOIN runtime_sessions s ON s.id=r.session_id WHERE s.task_id=? ORDER BY r.created DESC LIMIT 20',(task_id,)).fetchall()
+        return [{'method':row['method'],'reason':row['reason'],'shape':json.loads(row['shape_json'])} for row in rows]
 
     def decide(self, identifier, version, digest, choice, content=None):
         with self._lock:

@@ -98,7 +98,7 @@ class WebOffice:
             if path=='/api/runtime/url':
                 from office.app_server import external_url
                 return {'url':external_url(store,q['id'][0])}
-            if path=='/api/health':return {'ok':True,'version':'0.19','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.19.1','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
