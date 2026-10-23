@@ -36,7 +36,7 @@
 
 ## P5 — 관측 시간
 
-browser_timing은 전체 실행 경과와 도구 시작/완료 이벤트 사이의 관측 시간을 기록한다. MCP 브라우저/ego-browser CLI 호출 수를 기록하며 앱서버와 exec JSONL 양쪽을 지원한다. 취소·실패에서도 확보한 요약을 남긴다. 준비 시간은 browser_policy.preparation_ms에 기록한다.
+browser_timing은 전체 실행 경과와 도구 시작/완료 이벤트 사이의 관측 시간을 기록한다. MCP 브라우저/ego-browser CLI 호출 수를 기록하며 앱서버와 exec JSONL 양쪽을 지원한다. 취소·실패에서도 확보한 요약을 남긴다. app-server 승인 대기 시간은 따로 관측해 approval_wait_ms에 기록하며 도구 왕복 시간에도 포함될 수 있다. 준비 시간은 browser_policy.preparation_ms에 기록한다.
 
 개별 페이지 이동·스냅샷·클릭·사이트 대기·AI 추론 시간은 설치본이 제공하지 않으면 null이다. CLI 한 번 안의 여러 조작을 호출 한 번으로 집계한다. reasoning 아이템 경과는 모델 내부 추론 시간으로 이름 붙이지 않는다. 병렬 호출 시간 합계는 전체 시간보다 클 수 있다. 실제 병목은 관측값을 모은 뒤 판단해야 하며 체감 속도 개선을 검증했다고 주장하지 않는다.
 

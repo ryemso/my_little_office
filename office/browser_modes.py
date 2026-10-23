@@ -43,7 +43,8 @@ class Inventory:
             if value and value.get('id')==identifier:
                 if 'error' in value:raise RuntimeError('브라우저 모드 설정 조회 실패: '+method)
                 return value.get('result',{})
-            if value and (value.get('transport_error') or value.get('transport_closed')):break
+            if value and (value.get('transport_error') or value.get('transport_closed')):
+                raise RuntimeError('브라우저 모드 설정 실행기가 시작되지 않았습니다. 지원 설정과 실행기 진단을 확인하세요.')
         raise RuntimeError('브라우저 모드 설정 조회 시간 초과: '+method)
 
     def read(self,cwd):
@@ -70,7 +71,11 @@ def overrides(config,skills,selected):
     dependencies={d.get('value') for s in controlled for d in (s.get('dependencies') or {}).get('tools',[]) if d.get('type')=='mcp'}
     affected=[name for name,server in servers.items() if name in dependencies or is_ego(name) or is_ego(server.get('command','')) or any(is_ego(a) for a in (server.get('args') or [])) or is_ego(server.get('url',''))]
     if selected=='standard':
-        for name in affected:args+=['-c','mcp_servers.'+json.dumps(name)+'.enabled=false']
+        import re
+        for name in affected:
+            if not re.fullmatch(r'[A-Za-z0-9_-]+',name):
+                raise RuntimeError('POLICY_BLOCKED: 이 MCP 이름의 CLI 설정 격리는 검증되지 않았습니다.')
+            args+=['-c','mcp_servers.'+name+'.enabled=false']
     return args,controlled,affected
 
 

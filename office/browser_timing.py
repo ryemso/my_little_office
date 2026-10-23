@@ -4,7 +4,7 @@ import time
 
 class BrowserTiming:
     def __init__(self,clock=time.monotonic):
-        self.clock=clock;self.started=clock();self.active={};self.totals={};self.count=0
+        self.clock=clock;self.started=clock();self.active={};self.totals={};self.count=0;self.wait_started=None;self.wait_ms=0
 
     def observe(self,event,item):
         kind=item.get('type','');identifier=item.get('id')
@@ -25,8 +25,13 @@ class BrowserTiming:
                 start,category=old
                 self.totals[category]=self.totals.get(category,0)+(self.clock()-start)*1000
 
+    def approval_wait(self,waiting):
+        if waiting and self.wait_started is None:self.wait_started=self.clock()
+        elif not waiting and self.wait_started is not None:
+            self.wait_ms+=(self.clock()-self.wait_started)*1000;self.wait_started=None
+
     def summary(self):
-        return {'total_ms':round((self.clock()-self.started)*1000,2),'browser_tool_calls':self.count,
+        return {'total_ms':round((self.clock()-self.started)*1000,2),'browser_tool_calls':self.count,'approval_wait_ms':round(self.wait_ms+(0 if self.wait_started is None else (self.clock()-self.wait_started)*1000),2),
                 'observed_ms':{k:round(v,2) for k,v in self.totals.items()},'unfinished_items':len(self.active),
                 'navigation_ms':None,'snapshot_ms':None,'click_input_ms':None,'site_wait_ms':None,'ai_inference_ms':None,
-                'note':'도구 호출 왕복 관측값입니다. 배치 내부 동작·사이트 대기·AI 추론 시간은 제공되지 않으면 null입니다. 합산 시간은 병렬 호출에서 겹칠 수 있습니다.'}
+                'note':'도구 호출 왕복 관측값입니다. 호출 시간에는 승인 대기가 포함될 수 있습니다. 배치 내부 동작·사이트 대기·AI 추론 시간은 제공되지 않으면 null입니다. 합산 시간은 병렬 호출에서 겹칠 수 있습니다.'}

@@ -112,7 +112,9 @@ class AppServerRun:
             self.failure='실행기 요청을 처리하지 못했습니다. 요청: '+diagnostic['method']+' · 형식: '+diagnostic['shape']['mode']+' · 사유: '+diagnostic['reason']+' 권한을 우회하지 않았습니다.'
             return
         self.pending[key]={'id':identifier,'request':request_id,'method':method,'params':params,'sent':False,'created':time.time()}
-        if self.wait_started is None:self.wait_started=time.monotonic()
+        if self.wait_started is None:
+            self.wait_started=time.monotonic()
+            if self.timing:self.timing.approval_wait(True)
 
     def _deliver(self):
         for pending in list(self.pending.values()):
@@ -141,6 +143,7 @@ class AppServerRun:
         if not self.pending and self.wait_started is not None:
             self.deadline+=time.monotonic()-self.wait_started
             self.wait_started=None
+            if self.timing:self.timing.approval_wait(False)
             self.store.activity(self.task['id'],'executing','실행기 응답 처리 확인 · 작업 재개')
 
     def tick(self):

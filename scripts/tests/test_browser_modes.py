@@ -49,7 +49,7 @@ class BrowserModeTests(unittest.TestCase):
         skills=[{'name':'ego-browser','path':'/ego/SKILL.md','dependencies':{'tools':[{'type':'mcp','value':'my_browser'}]}}]
         args,_,servers=overrides(config,skills,'standard')
         self.assertEqual(set(servers),{'my_browser','ego_disabled'})
-        self.assertIn('mcp_servers."my_browser".enabled=false',args)
+        self.assertIn('mcp_servers.my_browser.enabled=false',args)
         self.assertFalse(any('gmail' in a for a in args))
         self.assertIn('enabled=false',args[1])
         args,_,_=overrides(config,skills,'ego')
@@ -97,6 +97,8 @@ class BrowserModeTests(unittest.TestCase):
         now=[0.0];timing=BrowserTiming(clock=lambda:now[0])
         item={'id':'call','type':'commandExecution','command':'ego-browser nodejs'}
         timing.observe('item/started',item);now[0]=2;timing.observe('item/completed',item);now[0]=3
+        timing.approval_wait(True);now[0]=4;timing.approval_wait(False)
         result=timing.summary();self.assertEqual(result['browser_tool_calls'],1)
+        self.assertEqual(result['approval_wait_ms'],1000)
         self.assertEqual(result['observed_ms']['browser_tool'],2000)
-        self.assertEqual(result['total_ms'],3000);self.assertIsNone(result['ai_inference_ms']);self.assertIsNone(result['snapshot_ms'])
+        self.assertEqual(result['total_ms'],4000);self.assertIsNone(result['ai_inference_ms']);self.assertIsNone(result['snapshot_ms'])
