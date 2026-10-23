@@ -85,7 +85,8 @@ class Store(Conversations,Decisions,Schedules,Activity):
                 self._message(con,active['id'],'pause-request','system','status',message+' · 현재 작업에 중단을 요청했습니다.')
             con.execute("UPDATE tasks SET status='cancel_requested', updated=? WHERE status='running'", (time.time(),))
 
-    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=()):
+    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=(), browser_mode='standard'):
+        if browser_mode not in ('standard', 'ego'): raise ValueError('지원하지 않는 브라우저 모드입니다.')
         prompt = prompt.strip()
         if role not in ROLES or not 5 <= len(prompt) <= 5000:
             raise ValueError('담당 직원을 선택하고 업무를 5~5000자로 입력하세요.')
@@ -96,12 +97,13 @@ class Store(Conversations,Decisions,Schedules,Activity):
             if previous and previous['project_id']==project_id:
                 source_ids=json.loads(previous['context_json']).get('selected_ids',[])
         context=snapshot(self,prompt,project_id,source_ids)
+        context['browser_mode']=browser_mode
         identifier = identifier or str(uuid.uuid4())
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             old = con.execute('SELECT * FROM tasks WHERE id=?', (identifier,)).fetchone()
             if old:
-                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id or sorted(set(source_ids)) != json.loads(old['context_json']).get('selected_ids',[]):
+                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id or sorted(set(source_ids)) != json.loads(old['context_json']).get('selected_ids',[]) or browser_mode != json.loads(old['context_json']).get('browser_mode','standard'):
                     raise ValueError('같은 업무 ID에 다른 내용을 제출할 수 없습니다.')
                 return identifier
             state = self._get(con, 'office', {})
