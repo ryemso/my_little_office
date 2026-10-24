@@ -44,6 +44,16 @@ def main():
                 deadline=time.time()+5
                 while store.tasks()[0]['status']!='completed' and time.time()<deadline:time.sleep(.05)
                 assert store.tasks()[0]['status']=='completed'
+                batch_ids=[store.submit('dev','일괄 검토 결과 테스트 '+str(i),project_id='company') for i in range(2)]
+                deadline=time.time()+10
+                while any(store.get(i)['status']!='review' for i in batch_ids) and time.time()<deadline:time.sleep(.05)
+                expect(page.locator('[data-role="ceo"] .owner-count')).to_have_text('2',timeout=10000)
+                page.get_by_role('button',name='❗ 대표 검토·승인함',exact=True).click()
+                page.get_by_role('button',name='검토 대상 전체 선택',exact=True).click()
+                expect(page.locator('[data-review-id]:checked')).to_have_count(2)
+                page.get_by_role('button',name='선택 결과 일괄 검토 완료',exact=True).click()
+                expect(page.locator('#runtime-notice')).to_contain_text('2건 검토 완료')
+                assert all(store.get(i)['status']=='completed' for i in batch_ids)
                 from office.app_server import AppServerRun,Transport
                 import os,sys
                 fixture=Path(__file__).resolve().parent/'fixtures/runtime_server.py'

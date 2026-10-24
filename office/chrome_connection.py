@@ -47,6 +47,24 @@ def skill_snapshot(skills):
     return result
 
 
+def launch_paths(server):
+    """Inspect only registered executable/script paths, never env or arbitrary args."""
+    import shutil
+    command=str(server.get('command') or '')
+    cwd=Path(server['cwd']) if server.get('cwd') else None
+    executable=Path(command)
+    explicit='/' in command or '\\' in command
+    command_exists=(executable if executable.is_absolute() or cwd is None else cwd/executable).is_file() if explicit else bool(shutil.which(command))
+    scripts=[]
+    for value in server.get('args') or []:
+        if not isinstance(value,str) or value.startswith('-') or '://' in value:continue
+        if not re.search(r'\.(?:mjs|cjs|js|py|exe)$',value,re.I):continue
+        path=Path(value)
+        resolved=path if path.is_absolute() else cwd/path if cwd else None
+        scripts.append({'file':path.name,'exists':resolved.is_file() if resolved else None})
+    return {'command_file':executable.name,'command_exists':command_exists,'scripts':scripts}
+
+
 def launch_overrides(config,skills,root):
     """Warm configured enabled bridges and repair only a broken/versioned cwd.
 
@@ -59,7 +77,8 @@ approval decision. Relative launcher files keep their original cwd.
         bridge=provider(name)
         if bridge:
             configured.append({'provider':bridge,'enabled':server.get('enabled') is not False,
-                               'cwd_exists':Path(server['cwd']).is_dir() if server.get('cwd') else None})
+                               'cwd_exists':Path(server['cwd']).is_dir() if server.get('cwd') else None,
+                               'launch_paths':launch_paths(server)})
         if not bridge or server.get('enabled') is False:continue
         if not re.fullmatch(r'[A-Za-z0-9_-]+',name):continue
         if not server.get('command'):continue  # No incomplete override-only server.
@@ -67,6 +86,12 @@ approval decision. Relative launcher files keep their original cwd.
         args+=['-c','mcp_servers.'+name+'.required=true']
         cwd=server.get('cwd')
         launcher=str(server.get('command',''))
+        if Path(launcher).is_absolute() and not Path(launcher).is_file() and Path(launcher).name.lower() in ('node','node.exe'):
+            import shutil
+            resolved=shutil.which(Path(launcher).name)
+            if resolved:
+                args+=['-c','mcp_servers.'+name+'.command='+json.dumps(resolved)]
+                repairs.append({'provider':bridge,'change':'registered_node_from_path'})
         relative_launcher=bool(('/' in launcher or '\\' in launcher) and not Path(launcher).is_absolute())
         relative_scripts=relative_launcher or any(isinstance(a,str) and re.search(r'\.(?:mjs|cjs|js|py|exe)$',a,re.I) and not Path(a).is_absolute() for a in (server.get('args') or []))
         if cwd and not relative_scripts and (not Path(cwd).is_dir() or '/plugins/cache/' in str(cwd).replace('\\','/')):

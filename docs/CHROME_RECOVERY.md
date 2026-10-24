@@ -64,3 +64,9 @@
 - https://learn.chatgpt.com/docs/browser — 내장 Browser와 외부 브라우저 확장 표면 구분.
 
 실제 0.163.0 기능 목록에서 js_repl은 removed/false였다. 따라서 그 플래그를 켜면 mcp__node_repl__js가 새로 생긴다는 복구 방법은 사용하지 않았다.
+
+## v0.20.4: Windows launch-path evidence and batch review
+
+Owner PC v0.20.3 returned thread/start -32603: required node_repl failed to initialize, Windows os error 3. This confirms a launch path failure, not an origin approval rejection. The missing path itself is not present in that response. Diagnostics now inspect the registered executable and script file existence, without logging environment variables or raw arguments. A missing absolute node/node.exe registration may use the same executable name resolved on PATH for this invocation only. Missing plugin scripts are not reconstructed, installed or redirected to a different browser. The owner PC must run the updated probe to determine the remaining missing component. Ego causing the path change remains unproven.
+
+The review inbox now supports selecting multiple submitted results and completing review in one transaction, with displayed-version checks. Stale, running, approval and child tasks are rejected. This does not apply files, publish content or grant runtime permissions.
