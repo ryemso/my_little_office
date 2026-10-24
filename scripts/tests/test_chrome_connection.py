@@ -58,6 +58,20 @@ class ChromeConnectionTests(unittest.TestCase):
         self.assertIn('거절',result['error']);self.assertNotIn('value',result)
         self.assertEqual(len(self.store.runtime.list(False)),1)
 
+    def test_startup_approval_can_bind_before_thread_start_response(self):
+        result={};runner=self.runner('chrome-start-approval')
+        def run():
+            try:result['value']=runner.run_probe(str(FIXTURE.parent),True)
+            except RuntimeError as error:result['error']=str(error)
+        thread=threading.Thread(target=run);thread.start()
+        until=time.time()+5
+        while time.time()<until and not self.store.runtime.list():time.sleep(.02)
+        requests=self.store.runtime.list();self.assertEqual(len(requests),1)
+        row=requests[0];self.store.runtime.decide(row['id'],row['version'],row['digest'],'accept')
+        thread.join(timeout=5);self.assertFalse(thread.is_alive());self.assertNotIn('error',result)
+        self.assertEqual(result['value']['browser_tools']['status'],'CHROME_CONNECTED')
+        self.assertEqual(self.store.runtime.list(False)[0]['state'],'accepted')
+
     def test_repair_is_scoped_and_does_not_reenable_disabled_servers(self):
         root=Path(self.tmp.name)
         config={'mcp_servers':{'cua_repl':{'command':sys.executable,'args':[str(FIXTURE)],'cwd':str(root/'gone')},'node_repl':{'enabled':False,'command':'missing'}}}
