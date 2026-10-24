@@ -16,7 +16,9 @@ for line in sys.stdin:
     msg=json.loads(line);method=msg.get('method');identifier=msg.get('id')
     if method=='initialize':emit({'id':identifier,'result':{'userAgent':'office-fixture'}})
     elif method=='thread/start':
-        if mode=='chrome-start-approval':
+        if mode=='thread-error':
+            emit({'id':identifier,'error':{'code':-32602,'message':'approval policy on-request is not allowed; password=fixture-private','data':{'private':'not-for-log'}}})
+        elif mode=='chrome-start-approval':
             start_id=identifier;remaining.add('startup-approval')
             emit({'method':'thread/started','params':{'thread':{'id':'fixture-thread'}}})
             emit({'id':'startup-approval','method':'mcpServer/elicitation/request','params':{'threadId':'fixture-thread','mode':'form','message':'Allow existing Chrome connection?','requestedSchema':{'type':'object','properties':{}}}})

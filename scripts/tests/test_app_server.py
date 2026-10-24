@@ -63,3 +63,19 @@ class RuntimeTests(unittest.TestCase):
     def test_disconnect_is_not_approval(self):
         thread,result=self.background('disconnect');thread.join(timeout=5)
         self.assertIn('연결이 끊겼',result['error']);self.assertNotIn('value',result)
+
+    def test_thread_start_error_preserves_reason_without_credentials(self):
+        with self.assertRaises(RuntimeError) as caught:
+            fixture_run(self.store,self.task,time.time()+10,'thread-error')
+        message=str(caught.exception)
+        self.assertIn('thread/start',message)
+        self.assertIn('-32602',message)
+        self.assertIn('on-request is not allowed',message)
+        self.assertNotIn('fixture-private',message)
+        self.assertNotIn('not-for-log',message)
+
+    def test_rpc_error_omits_sensitive_data_and_urls(self):
+        from office.app_server import rpc_error
+        message=rpc_error('thread/start',{'code':-1,'message':'token=private https://example.com/?code=private','data':{'secret':'private'}})
+        self.assertNotIn('private',message)
+        self.assertIn('[REDACTED]',message)

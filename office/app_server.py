@@ -78,6 +78,21 @@ class Transport:
             except (OSError,ValueError):pass
 
 
+def rpc_error(method,error):
+    """Expose the RPC reason, never arbitrary error.data or request payloads."""
+    import re
+    from office.engine import safe_diagnostic
+    error=error if isinstance(error,dict) else {}
+    code=error.get('code')
+    code=str(code) if type(code) is int else 'unknown'
+    message=error.get('message')
+    message=message if isinstance(message,str) else '실행기가 상세 사유를 제공하지 않았습니다.'
+    message=re.sub(r'https?://[^\s<>]+','[URL omitted]',message)
+    message=re.sub(r'(?i)((?:cookie|secret|credential|session[_-]?token|token)\s*[\"\']?\s*[:=]\s*[\"\']?)[^\s\"\',}]+',r'\1[REDACTED]',message)
+    message=safe_diagnostic(message).replace('\r',' ').replace('\n',' ')[:1500]
+    return '실행기가 요청을 거절했습니다: '+method+' · 오류 코드: '+code+' · 사유: '+message
+
+
 class AppServerRun:
     def __init__(self, store, task, transport, end, timing=None, browser_policy=None):
         self.timing=timing
@@ -99,7 +114,7 @@ class AppServerRun:
             if time.monotonic()>=until:raise RuntimeError('실행기 요청 응답 시간 초과: '+method)
             self.tick()
         result=self.responses.pop(identifier)
-        if 'error' in result:raise RuntimeError('실행기가 요청을 거절했습니다: '+method)
+        if 'error' in result:raise RuntimeError(rpc_error(method,result['error']))
         return result.get('result',{})
 
     def _server_request(self, message):
@@ -299,7 +314,7 @@ def execute(store, task, command, cwd, env, prompt, writable, images, end, windo
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.1'))
+    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.2'))
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
     try:return runner.run_probe(cwd,writable) if diagnostic else runner.run(prompt,cwd,writable,images)
     finally:
