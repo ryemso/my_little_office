@@ -29,6 +29,9 @@ class ChromeConnectionTests(unittest.TestCase):
         data=result['browser_tools']
         self.assertEqual(data['status'],'CHROME_CONNECTED')
         self.assertTrue(data['tool_call_verified'])
+        from office.chrome_connection import receipts
+        self.assertEqual(receipts(data)[0]['status'],'completed')
+        self.assertGreaterEqual(data['probe_round_trip_ms'],0)
         self.assertNotIn('fixture-secret',json.dumps(result))
         self.assertNotIn(b'fixture-secret',(Path(self.tmp.name)/'office.sqlite3').read_bytes())
 

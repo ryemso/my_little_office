@@ -196,15 +196,19 @@ def run_codex(store, task, end):
             try:
                 result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args,browser_args=browser_args,timing=timing,browser_policy=browser_policy.get('chrome'),diagnostic=diagnostic)
             except Exception as error:
-                from office.chrome_connection import latest
+                from office.chrome_connection import latest,receipts
                 return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
-                        'evidence':{'browser_timing':timing.summary(),'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id']),'browser_tools':latest(store,task['id'])}}
+                        'evidence':{'browser_timing':timing.summary(),'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id']),'browser_tools':latest(store,task['id']),'external_tools':receipts(latest(store,task['id']))}}
             environment['browser_tools']=result.get('browser_tools',{})
             if diagnostic:
+                from office.chrome_connection import receipts
+                environment.update(runtime_session=result['session'],runtime_thread=result['thread'],runtime_turn=result['turn'])
+                probe_timing=timing.summary()
+                probe_timing['browser_tool_calls']=int(bool(result.get('browser_tools',{}).get('tool_call_attempted')))
                 status=result.get('browser_tools',{}).get('status')
                 return {'status':'review' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else 'blocked',
                         'output':result['text'],'error':'' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else '기존 Chrome 연결 복구 진단: '+str(status),
-                        'evidence':{'environment':environment,'browser_tools':result.get('browser_tools',{}),'browser_timing':timing.summary(),'commands':[],'external_tools':[],'changes':[],'artifacts':[]}}
+                        'evidence':{'environment':environment,'browser_tools':result.get('browser_tools',{}),'browser_timing':probe_timing,'commands':[],'external_tools':receipts(result.get('browser_tools',{})),'changes':[],'artifacts':[]}}
             output.write_text(result['text'],encoding='utf-8')
             stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
             stderr.write_text('',encoding='utf-8')

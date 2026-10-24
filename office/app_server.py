@@ -236,7 +236,7 @@ class AppServerRun:
         try:
             self.start_thread(cwd,writable)
             result,tool=self.check_browser()
-            result=state_call(self.rpc,self.thread,result,tool)
+            result=state_call(self.rpc,self.thread,result,tool,record=lambda snapshot:record_snapshot(self.store,snapshot))
             # A direct MCP call can resolve its request before the resolved event
             # reaches the transport. Drain the existing request, never resend.
             while self.pending:self.tick()

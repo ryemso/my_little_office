@@ -84,8 +84,8 @@ approval decision. Relative launcher files keep their original cwd.
 
 def error_kind(text):
     text=str(text).lower()
-    if any(s in text for s in ('denied','declined','policy','not allowed')):return 'POLICY_BLOCKED'
-    if any(s in text for s in ('auth','login','sign in')):return 'AUTH_REQUIRED'
+    if any(s in text for s in ('denied','declined','policy','not allowed','거절','정책')):return 'POLICY_BLOCKED'
+    if any(s in text for s in ('auth','login','sign in','인증','로그인')):return 'AUTH_REQUIRED'
     if any(s in text for s in ('cwd','directory','os error 2','os error 3','no such file','not found')):return 'LAUNCH_PATH_ERROR'
     return 'CONNECTION_FAILED'
 
@@ -164,7 +164,7 @@ def browser_count(value):
     return len(found)
 
 
-def state_call(rpc,thread_id,result,tool):
+def state_call(rpc,thread_id,result,tool,record=None):
     selected=result['selected']
     if selected['provider']!='cua_repl':
         result['status']='LEGACY_CUA_MISSING'
@@ -174,14 +174,33 @@ def state_call(rpc,thread_id,result,tool):
         result['status']='UNSUPPORTED_TOOL_SCHEMA';return result
     arguments={'code':'await cua.getState();'}
     if 'title' in props:arguments['title']='기존 Chrome 연결 상태 확인'
-    response=rpc('mcpServer/tool/call',{'threadId':thread_id,'server':selected['server'],'tool':tool.get('name','js'),'arguments':arguments})
-    if response.get('isError'):
-        result['status']=error_kind(json.dumps(response,ensure_ascii=False));return result
-    result['tool_call_verified']=True
-    count=browser_count(response)
-    result.update(status='CHROME_CONNECTED' if count else 'STATE_CALL_OK',chrome_connection_verified=bool(count),chrome_count=count)
-    # The response can contain tabs/account context. Never persist it.
-    return result
+    result.update(tool_call_attempted=True,tool_call_completed=False,
+                  call={'server':selected['server'],'tool':tool.get('name','js'),'operation':'cua.getState'})
+    if record:record(result)
+    started=time.monotonic()
+    try:
+        response=rpc('mcpServer/tool/call',{'threadId':thread_id,'server':selected['server'],'tool':tool.get('name','js'),'arguments':arguments})
+        result['tool_call_completed']=True
+        if response.get('isError'):
+            result['status']=error_kind(json.dumps(response,ensure_ascii=False));return result
+        result['tool_call_verified']=True
+        count=browser_count(response)
+        result.update(status='CHROME_CONNECTED' if count else 'STATE_CALL_OK',chrome_connection_verified=bool(count),chrome_count=count)
+        # The response can contain tabs/account context. Never persist it.
+        return result
+    except RuntimeError as error:
+        result['status']=error_kind(error);raise
+    finally:
+        result['probe_round_trip_ms']=round((time.monotonic()-started)*1000,2)
+        if record:record(result)
+
+
+def receipts(result):
+    if not result.get('tool_call_attempted'):return []
+    call=result['call']
+    return [{'type':'mcp_tool_call','server':call['server'],'tool':call['tool'],
+             'status':'completed' if result.get('tool_call_verified') else 'failed' if result.get('tool_call_completed') else 'unconfirmed',
+             'source':'app_server_direct_probe'}]
 
 
 def latest(store,task_id=None):
