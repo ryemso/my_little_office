@@ -18,7 +18,7 @@
     "docs/COMPANY.md": "13c713ee09ebdfd65ef85237aa8a8038a6a57625a05c86a106bee75cee85c3cc",
     "docs/CONVERSATIONS.md": "deb727e3789f6e7f45b3bf6260305a0c936f4a1c5d46b89a7696003c400b5d67",
     "docs/DECISIONS.md": "120277b28ad26211989927468a042a4b9828c6dede04f897e7a54e63156a0faa",
-    "docs/DELEGATION_AND_UPDATES.md": "dd451698d3c6664273a2a54e4210240850bc08c59221576be1976c1bd419dda0",
+    "docs/DELEGATION_AND_UPDATES.md": "29a92875b60e9074a129644ff214e28ebfec5d5d54f27425b9f30bf9b964dbb9",
     "docs/DIRECT_OFFICE_DESIGN.md": "aaa8b4e4acc94a251b12f7e5f881191bda8c58f1d3c1b6c8b75e084873558f47",
     "docs/EXECUTION.md": "6c412d70d7649ea420652c54235dd7025f26c3f6fe469e9ab4bf5e4e03a61e87",
     "docs/INTERACTIVE_EXECUTION_REDESIGN.md": "81075828764d16679819c47945b880dace4677200d226de7a6d3b79c60156018",
@@ -29,7 +29,7 @@
     "docs/ROADMAP.md": "b29e61f2034f43b862de4a5b0bbffd950eb1c9a232dcb767ee72748f8db47b0f",
     "docs/ROLES.md": "f21ec9ef58f6bb88bd87f2034870a5d1e61f3433d1a42e89d3785a18595b83cb",
     "docs/WEB_OFFICE.md": "a8ef065406f827ca89e87a8d95fce6e25e21f46b6a376e0aa8efd54e577940bd",
-    "docs/WORKLOG.md": "600645a7ea43f4452f4199eb949eef5156b05d575c0270e768935d880ba687f7",
+    "docs/WORKLOG.md": "2f84021c412a035169fbb0980dda00492639f5b879f14a120c99e5e07a9032df",
     "install-office.bat": "dcf0d5afc8c0d07ffdf0ef7bead9da4ffeea1be21914e5c3374492d178522b8f",
     "office/__init__.py": "9bb445980f2efbf7440c5f2acb3c6b7540a9baef4779a0b948584a5a67357fbc",
     "office/actions.py": "d5095e55ab29e539f4b1c8f1e408b82e1123085de9d411f1501103f324bacdbf",
@@ -116,6 +116,6 @@
     "site/style.css": "ff7bea9884a34d7cc5b509cc53577afe717731e22f198b478a0ece450a4a7e54",
     "start-office.bat": "1aa8321473f8381030a6b5ec3a7a07419d8dcc30953b181ec37099306dcebe1f",
     "streamlit_app.py": "b261d25537677a26f75d7f6583f2b9edfd6c4dc54207bc460a459009232b2cbe",
-    "update-office.bat": "3d0b80754bd3e96dd51b4f761906b3fa7ce4ff79fc13b90bd4034ebb238b9adb"
+    "update-office.bat": "e13968d3269252c5748987e8252f0ed4f6a0d56a70b737da014be4c5a561e6f2"
   }
 }
