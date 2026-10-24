@@ -98,7 +98,7 @@ class WebOffice:
             if path=='/api/runtime/url':
                 from office.app_server import external_url
                 return {'url':external_url(store,q['id'][0])}
-            if path=='/api/health':return {'ok':True,'version':'0.19.3','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.19.4','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
@@ -121,6 +121,8 @@ class WebOffice:
         elif path=='/api/submit':
             identifier=store.submit(b['role'],b['prompt'],identifier=b['request_id'],parent=b.get('parent'),delegate=bool(b.get('delegate')),project_id=b['project_id'],source_ids=b.get('source_ids',[]))
             return {'id':identifier,'thread':store.thread_id(identifier)}
+        elif path=='/api/attention-batch':return {'acknowledged':store.acknowledge_many(b.get('items'))}
+        elif path=='/api/review-batch':return {'completed':store.complete_many(b.get('items'))}
         elif path=='/api/decision':
             task=self.task(b['id']);action=b['action']
             if action=='approve':approve_decision(store,task['id'],b['version'],b['fingerprint'])

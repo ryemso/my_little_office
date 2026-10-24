@@ -162,3 +162,7 @@ GitHub 인증 후 수동 실행하는 직무별 AI 초안 워크플로, Response
 - 등록 action 부재를 모든 게시 실행 불가로 해석하게 만든 총괄·직원·검토 지침을 수정했다. 명시적으로 승인된 범위에서 연결 도구·브라우저 실행을 허용한다.
 - 실제 도구 승인 거절의 우회 금지와 등록 action ID 검증은 유지한다. 로그인 요청 후 대기·재개, 선행 업무 의존성, 중복 확인과 원격 게시물 재열람 기준을 명시했다.
 - 사용자 PC의 실제 네이버 공개 발행은 이번 코드 검증에 포함하지 않는다.
+
+## 2026-10-25 — v0.19.4: restore bulk review only
+
+Restore batch result completion and separate failed/blocked acknowledgement in web and Streamlit inboxes on the pre-ego v0.19.3 codebase. Version-checked SQLite transactions reject stale or mixed targets atomically. These actions do not apply files, approve tools, retry work or publish. No ego/browser-mode modules, bridge launch overrides or new runtime settings are restored. Browser skill availability remains dependent on the user's external plugin environment.
