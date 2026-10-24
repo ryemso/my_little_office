@@ -100,17 +100,9 @@ def stop_process(process):
 
 
 def run_codex(store, task, end):
-    from office.browser_modes import mode,prepare
-    from office.browser_timing import BrowserTiming
-    selected=mode(task)
-    diagnostic=json.loads(task.get('context_json') or '{}').get('host_operation')=='chrome_probe'
-    timing=BrowserTiming()
     if task.get('action_json'):
         from office.actions import run_action
-        result=run_action(store,task,end)
-        result.setdefault('evidence',{}).setdefault('environment',{})['browser_mode']=selected
-        result['evidence']['browser_timing']=timing.summary()
-        return result
+        return run_action(store,task,end)
     require_login()
     env = dict(os.environ)
     for key in ('OPENAI_API_KEY', 'CODEX_API_KEY'):
@@ -157,28 +149,17 @@ def run_codex(store, task, end):
         if writable:prompt+='\n제작·개발 지시는 제안으로 끝내지 말고 프로젝트 작업 사본에 검토 가능한 실제 결과물을 작성하세요. 사용자가 제안·설명만 요청한 경우는 예외입니다. 결과 파일 경로와 실제 검증 결과를 제출하세요.\n'
         if task.get("kind") not in ("plan", "report"):
             prompt += EXTERNAL_EXECUTION_POLICY
-        browser_mode=selected
-        if browser_mode=='ego':
-            prompt+='\n브라우저 모드: ego. ego-browser 스킬이 실제로 설치되고 접근 허용된 경우에만 사용하세요. 다른 브라우저나 Playwright로 자동 전환하지 마세요. 동일한 Task Space를 재사용하고 화면이 바뀌지 않았다면 중복 스냅샷을 줄이세요. 설치된 공식 가이드가 지원하는 동작만 사용하세요. 없는 기능을 성공으로 표시하지 마세요. 비밀번호를 프롬프트나 도구 인자로 보내지 마세요.\n'
-        else:
-            prompt+='\n브라우저 모드: 기본. ego-browser를 사용하지 마세요. 연결된 기본 브라우저·커넥터·기존 Playwright 작업 등 허용된 기존 수단을 사용하세요.\n'
         prompt += instructions(store, task)
         prompt+='\n필수 산출물 파일: '+task.get('expected_json','[]')+' · 이 파일이 없거나 비어 있으면 검증 실패로 처리합니다.\n'
         prompt += '\n현재 업무:\n' + task['prompt']
-        try:
-            browser_args,browser_policy=prepare(task,codex_command(),working_directory,env,state_root=store.root)
-        except Exception as error:
-            return {'status':'blocked','error':'브라우저 모드 준비 실패: '+safe_diagnostic(error),
-                    'evidence':{'environment':{'browser_mode':selected,'office_version':'0.20.5','stage':task.get('kind','single')},'browser_timing':timing.summary()}}
         args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
         args[-1:-1]=windows_args
-        args[-1:-1]=browser_args
-        environment.update(browser_mode=selected,browser_policy=browser_policy,sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context,preflight=preflight)
+        environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context,preflight=preflight)
         stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
         stage_name={'plan':'총괄 배정(계획)','employee':'직원 실무','report':'총괄 최종 검토','single':'직접 지시'}.get(environment['stage'],environment['stage'])
-        store.message(task['id'],'execution-environment','system','status','실행 단계: '+stage_name+' · 담당: '+ROLES[task['role']]+'\n프로젝트: '+str(project_context['name'] or '미지정')+' · 시작 파일 '+str(project_context['file_count'])+'개\n작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n브라우저 모드: '+selected+'\n작업 폴더: '+working_directory)
+        store.message(task['id'],'execution-environment','system','status','실행 단계: '+stage_name+' · 담당: '+ROLES[task['role']]+'\n프로젝트: '+str(project_context['name'] or '미지정')+' · 시작 파일 '+str(project_context['file_count'])+'개\n작업 범위: '+environment['sandbox']+' · Windows 샌드박스: '+environment['windows_sandbox']+'\n작업 폴더: '+working_directory)
         for image_path in images:
             args[-1:-1]=['--image',image_path]
         if writable:
@@ -186,52 +167,24 @@ def run_codex(store, task, end):
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
         with store.connect() as con:
             runtime_mode=store._get(con,'runtime_mode','exec')
-        environment['configured_runtime']=runtime_mode
-        if diagnostic:runtime_mode='appserver'
         environment['runtime']=runtime_mode
-        environment['office_version']='0.20.5'
-        if runtime_mode=='appserver' or diagnostic:
+        if runtime_mode=='appserver':
             from office.app_server import execute
             from types import SimpleNamespace
             try:
-                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args,browser_args=browser_args,timing=timing,browser_policy=browser_policy.get('chrome'),diagnostic=diagnostic)
+                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args)
             except Exception as error:
-                from office.chrome_connection import latest,receipts
                 return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
-                        'evidence':{'browser_timing':timing.summary(),'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id']),'browser_tools':latest(store,task['id']),'external_tools':receipts(latest(store,task['id']))}}
-            environment['browser_tools']=result.get('browser_tools',{})
-            if diagnostic:
-                from office.chrome_connection import receipts
-                environment.update(runtime_session=result['session'],runtime_thread=result['thread'],runtime_turn=result['turn'])
-                probe_timing=timing.summary()
-                probe_timing['browser_tool_calls']=int(bool(result.get('browser_tools',{}).get('tool_call_attempted')))
-                status=result.get('browser_tools',{}).get('status')
-                return {'status':'review' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else 'blocked',
-                        'output':result['text'],'error':'' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else '기존 Chrome 연결 복구 진단: '+str(status),
-                        'evidence':{'environment':environment,'browser_tools':result.get('browser_tools',{}),'browser_timing':probe_timing,'commands':[],'external_tools':receipts(result.get('browser_tools',{})),'changes':[],'artifacts':[]}}
+                        'evidence':{'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id'])}}
             output.write_text(result['text'],encoding='utf-8')
             stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
             stderr.write_text('',encoding='utf-8')
             process=SimpleNamespace(returncode=0)
             environment.update(runtime_session=result['session'],runtime_thread=result['thread'],runtime_turn=result['turn'])
         else:
-            if browser_policy.get('chrome',{}).get('required'):
-                from office.browser_modes import Inventory
-                from office.chrome_connection import require_catalog
-                check=None
-                try:
-                    check=Inventory(codex_command(),working_directory,env,browser_args)
-                    thread=check.call('thread/start',{'cwd':working_directory,'sandbox':'workspace-write' if writable else 'read-only','approvalPolicy':'on-request','approvalsReviewer':'user'})
-                    inventory,_=require_catalog(check.call,thread['thread']['id'],browser_policy['chrome'],store,task['id'])
-                    environment['browser_tools']=inventory
-                except Exception:
-                    from office.chrome_connection import latest
-                    return {'status':'blocked','error':'기존 실행기 브라우저 연결 확인 실패. 실제 도구 상태를 확인하고 승인 입력이 필요하면 대화형 실행기를 사용하세요.','evidence':{'environment':environment,'browser_tools':latest(store,task['id'])}}
-                finally:
-                    if check:check.close()
             with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
                 process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
-                live=LiveEvents(store,task,stdout,timing=timing)
+                live=LiveEvents(store,task,stdout)
                 try:
                     try:
                         process.stdin.write(prompt)
@@ -245,7 +198,7 @@ def run_codex(store, task, end):
                         current = store.get(task['id'])
                         if current['status'] == 'cancel_requested' or time.time() >= end or stdout.stat().st_size + stderr.stat().st_size > 8_000_000:
                             stop_process(process)
-                            return {'status': 'interrupted', 'error': '중단 요청 또는 작업 시간·로그 크기 제한으로 멈췄습니다.','evidence':{'environment':environment,'browser_timing':timing.summary()}}
+                            return {'status': 'interrupted', 'error': '중단 요청 또는 작업 시간·로그 크기 제한으로 멈췄습니다.'}
                         time.sleep(.2)
                 finally:
                     if process.poll() is None:
@@ -290,7 +243,7 @@ def run_codex(store, task, end):
             error='Codex 사용 한도 대기. 복구 시각은 미확인입니다.' if quota else category+' (프로세스 종료 코드 '+str(process.returncode)+')\n'+safe_diagnostic(reason)[-1800:]+'\n진단 파일: '+str(stderr)
             # Keep partial output for review; never turn a policy denial into success.
             safe_text=safe_diagnostic(text)
-            return {'status':'quota_wait' if quota else 'blocked' if browser_denied else 'failed','error':error,'output':safe_text,'evidence':{'environment':environment,'browser_timing':timing.summary()}}
+            return {'status':'quota_wait' if quota else 'blocked' if browser_denied else 'failed','error':error,'output':safe_text,'evidence':{'environment':environment}}
         if re.search(r'sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9_]{20,}|-----BEGIN .*PRIVATE KEY-----', text):
             return {'status': 'failed', 'error': '비밀 키로 의심되는 결과의 표시를 차단했습니다. PC 로그를 확인하세요.'}
         usage = next((e.get('usage', {}) for e in reversed(events) if e.get('type') == 'turn.completed'), {})
@@ -303,7 +256,7 @@ def run_codex(store, task, end):
             if event.get('type')!='item.completed' or not isinstance(item,dict):continue
             if item.get('type')=='web_search':external.append({'type':'web_search','action':safe_diagnostic(json.dumps(item.get('action',{}),ensure_ascii=False))})
             elif item.get('type')=='mcp_tool_call':external.append({key:item.get(key) for key in ('type','server','tool','status')})
-        evidence={'browser_timing':timing.summary(),'environment':environment,'commands':commands[-40:],'external_tools':external[-40:],'changes':workspace.changes() if project else []}
+        evidence={'environment':environment,'commands':commands[-40:],'external_tools':external[-40:],'changes':workspace.changes() if project else []}
         from office.smoke import PREFIX, verify
         if task['prompt'].startswith(PREFIX):
             acceptance=verify(workspace.work,commands)

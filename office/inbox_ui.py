@@ -26,16 +26,6 @@ def decision_dialog(store):
     kind=st.radio('처리할 사안',['전체','승인','검토','문제 확인'],horizontal=True,key='inbox_filter')
     selected={'승인':'approval','검토':'review','문제 확인':'attention'}.get(kind)
     visible=[entry for entry in entries if not selected or entry['decision_type']==selected]
-    with st.expander('일괄검토 · 문제 일괄 확인',expanded=True):
-        st.caption('검토 완료와 실패·차단 문제 확인을 구분합니다. 원본 반영·외부 실행 승인은 포함하지 않습니다.')
-        for category,label,method in [('review','결과 검토',store.complete_many),('attention','문제 확인',store.acknowledge_many)]:
-            candidates=[row for row in visible if row['decision_type']==category]
-            selected_ids=st.multiselect(label+' 대상',options=[row['id'] for row in candidates],format_func=lambda identifier:next(row['prompt'][:70] for row in candidates if row['id']==identifier),key='batch-'+category)
-            if st.button('선택 '+label+' 일괄 처리',key='batch-submit-'+category,disabled=not selected_ids):
-                try:
-                    count=method([{'id':row['id'],'version':row['updated']} for row in candidates if row['id'] in selected_ids])
-                    notice(str(count)+'건 '+label+' 처리했습니다.')
-                except ValueError as error:st.error(str(error))
     maximum=st.session_state.get('inbox_limit',20)
     projects={project['id']:project['name'] for project in store.projects()}
     for index,item in enumerate(visible[:maximum]):

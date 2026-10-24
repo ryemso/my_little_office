@@ -81,8 +81,6 @@ class InboxTests(unittest.TestCase):
                 next(button for button in app.button if button.key=='open-owner-inbox').click().run()
                 self.assertFalse(app.exception)
                 self.assertTrue(any('실제 결과 미리보기' in item.value for item in app.markdown))
-                self.assertTrue(any(item.key=='batch-review' for item in app.multiselect))
-                self.assertTrue(any(item.key=='batch-attention' for item in app.multiselect))
                 next(button for button in app.button if str(button.key).startswith('inbox-follow-')).click().run()
                 self.assertFalse(app.exception)
                 self.assertFalse(app.session_state.inbox_open)

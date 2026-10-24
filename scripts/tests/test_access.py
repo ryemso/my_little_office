@@ -34,7 +34,7 @@ class AccessTests(unittest.TestCase):
                         {'type':'turn.completed'}]
                 kwargs['stdout'].write('\n'.join(json.dumps(event) for event in events)+'\n');kwargs['stdout'].flush()
                 return SimpleNamespace(stdin=io.StringIO(),returncode=0,poll=lambda:0)
-            with patch.dict('os.environ',{'GH_TOKEN':'fixture-github-token'}),patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
+            with patch.dict('os.environ',{'GH_TOKEN':'fixture-github-token'}),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
                 result=run_codex(store,task,time.time()+10)
             self.assertEqual(result['status'],'review')
             self.assertTrue(any(change['path']=='review.md' for change in result['evidence']['changes']))

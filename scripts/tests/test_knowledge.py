@@ -101,6 +101,6 @@ class KnowledgeTests(unittest.TestCase):
             Path(args[args.index('-o')+1]).write_text('모의 이미지 분석 결과')
             kwargs['stdout'].write(json.dumps({'type':'turn.completed'})+'\n');kwargs['stdout'].flush()
             return SimpleNamespace(stdin=Input(),returncode=0,poll=lambda:0)
-        with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
+        with patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
             self.assertEqual(run_codex(self.store,task,time.time()+10)['status'],'review')
         self.assertIn('Pandas',captured[0]);self.assertIn('전체 원본 자료 경로',captured[0])

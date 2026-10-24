@@ -29,10 +29,8 @@ def parse_plan(text):
     if not isinstance(steps, list) or not 1 <= len(steps) <= MAX_STEPS:
         raise ValueError('총괄은 1~6개 업무만 배정할 수 있습니다.')
     for step in steps:
-        if not isinstance(step, dict) or not {'role', 'prompt'} <= set(step) or not set(step) <= {'role','prompt','action','artifacts','browser_required'}:
+        if not isinstance(step, dict) or not {'role', 'prompt'} <= set(step) or not set(step) <= {'role','prompt','action','artifacts'}:
             raise ValueError('배정 업무에는 role과 prompt만 필요합니다.')
-        if 'browser_required' in step and type(step['browser_required']) is not bool:
-            raise ValueError('browser_required는 참/거짓이어야 합니다.')
         if 'artifacts' in step:
             from pathlib import PurePosixPath
             outputs=step['artifacts']
@@ -56,7 +54,6 @@ def instructions(store, task):
         return (EXTERNAL_EXECUTION_POLICY+'등록된 외부 작업: '+available+'\n등록된 네이버 연결 작업을 사용하는 경우 원문 JSON(post_id,title,body,images 선택)을 먼저 제작하고 draft 작업, publish 작업 순으로 배정하세요. 실제 글마다 고유 post_id를 유지하세요. 등록 작업을 실행할 때만 role/prompt에 action 필드로 등록 ID를 추가하세요. 등록되지 않은 action은 만들지 마세요.\n' + '당신은 총괄입니다. 대표 지시를 실제 하부 직원들이 순서대로 수행할 1~6개 업무로 나누세요. '
                 '앞 업무 결과가 다음 직원에게 전달됩니다. 연결된 프로젝트에서 파일 작성·수정·테스트·분석·홍보물 제작을 실제로 수행할 수 있습니다. 연결되지 않은 계정의 외부 실행을 약속하지 마세요. '
                 '대표가 제작·개발·판매 준비를 요청하면 제안 담당만 배정하지 말고 실제 샘플 파일·문안·검증을 만드는 담당 업무를 반드시 포함하세요. 각 담당 지시에 결과 파일과 완료 기준을 적고 제작 업무에는 artifacts 배열로 필수 상대 파일 경로를 지정하세요. 조회·설명 업무는 빈 배열을 사용합니다. '
-                '브라우저의 실제 조작이 필요한 직원 업무는 browser_required:true를 지정하세요. 파일 검토·문서 작성만 하는 업무에는 false를 지정하세요. 브라우저 도구 부재나 선행 업무 실패를 장애 보고서 작성 완료로 바꿔 후속 작업에 넘기지 마세요. '
                 '총괄 자신에게 배정하거나 재귀적인 업무 배정을 요청하지 마세요. '
                 '출력은 설명 없이 JSON 하나만: {"tasks":[{"role":"plan","prompt":"구체적인 업무 지시"}]}. '
                 '가능한 role은 plan, dev, design, market, data입니다. 각 prompt는 5~3000자입니다.\n')
