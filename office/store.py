@@ -85,7 +85,7 @@ class Store(Conversations,Decisions,Schedules,Activity):
                 self._message(con,active['id'],'pause-request','system','status',message+' · 현재 작업에 중단을 요청했습니다.')
             con.execute("UPDATE tasks SET status='cancel_requested', updated=? WHERE status='running'", (time.time(),))
 
-    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=(), browser_mode='standard'):
+    def submit(self, role, prompt, identifier=None, parent=None, delegate=False, project_id=None, source_ids=(), browser_mode='standard', host_operation=None):
         if not isinstance(browser_mode,str) or browser_mode not in ('standard', 'ego'): raise ValueError('지원하지 않는 브라우저 모드입니다.')
         prompt = prompt.strip()
         if role not in ROLES or not 5 <= len(prompt) <= 5000:
@@ -98,12 +98,16 @@ class Store(Conversations,Decisions,Schedules,Activity):
                 source_ids=json.loads(previous['context_json']).get('selected_ids',[])
         context=snapshot(self,prompt,project_id,source_ids)
         context['browser_mode']=browser_mode
+        if host_operation is not None:
+            if host_operation!='chrome_probe':raise ValueError('지원하지 않는 호스트 진단입니다.')
+            context['host_operation']=host_operation
+            context['browser_required']=True
         identifier = identifier or str(uuid.uuid4())
         with self.connect() as con:
             con.execute('BEGIN IMMEDIATE')
             old = con.execute('SELECT * FROM tasks WHERE id=?', (identifier,)).fetchone()
             if old:
-                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id or sorted(set(source_ids)) != json.loads(old['context_json']).get('selected_ids',[]) or browser_mode != json.loads(old['context_json']).get('browser_mode','standard'):
+                if old['role'] != role or old['prompt'] != prompt or old['kind'] != kind or old['project_id'] != project_id or sorted(set(source_ids)) != json.loads(old['context_json']).get('selected_ids',[]) or browser_mode != json.loads(old['context_json']).get('browser_mode','standard') or host_operation != json.loads(old['context_json']).get('host_operation'):
                     raise ValueError('같은 업무 ID에 다른 내용을 제출할 수 없습니다.')
                 return identifier
             state = self._get(con, 'office', {})
@@ -205,9 +209,11 @@ class Store(Conversations,Decisions,Schedules,Activity):
                     now = time.time()
                     action = registered.get(step.get('action'))
                     status = 'awaiting_approval' if action and not action['automatic'] else 'queued'
+                    child_context=json.loads(old['context_json'])
+                    if 'browser_required' in step:child_context['browser_required']=step['browser_required']
                     child_id=str(uuid.uuid4())
                     con.execute('INSERT INTO tasks(id,role,prompt,status,created,updated,kind,root_id,ordinal,project_id,action_json,context_json,expected_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                                (child_id, step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', old['context_json'],json.dumps(step.get('artifacts',[]),ensure_ascii=False)))
+                                (child_id, step['role'], step['prompt'], status, now, now, 'employee', identifier, ordinal, old['project_id'], json.dumps(action,ensure_ascii=False) if action else '', json.dumps(child_context,ensure_ascii=False),json.dumps(step.get('artifacts',[]),ensure_ascii=False)))
                     self._message(con,child_id,'submitted','lead','assignment',ROLES[step['role']]+' 담당에게 배정합니다.\n'+step['prompt'])
                     if status=='awaiting_approval':self._message(con,child_id,'approval-needed','system','status','연결 작업 실행 승인을 기다립니다.')
             if old['root_id']:

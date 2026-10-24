@@ -63,6 +63,19 @@ def main():
                 expect(page.locator('#runtime-chat')).to_contain_text('승인 왕복 모형 완료',timeout=15000)
                 assert not store.runtime.list(),'resolved request must leave inbox'
                 print('Web office runtime approval: avatar badge, two cards, decisions, resolution and continuation passed')
+                def chrome_runner(store,task,end):
+                    transport=Transport([sys.executable,'-u',str(fixture),'chrome-ready'],str(fixture.parent),dict(os.environ))
+                    result=AppServerRun(store,task,transport,end,browser_policy={'required':True}).run_probe(str(fixture.parent),True)
+                    return {'status':'review','output':result['text'],'evidence':{'browser_tools':result['browser_tools']}}
+                worker.runner=chrome_runner
+                page.get_by_text('기존 Chrome 연결 복구',exact=True).click()
+                page.get_by_role('button',name='기존 Chrome 연결 진단·복구',exact=True).click()
+                expect(page.locator('#runtime-chat')).to_contain_text('CHROME_CONNECTED',timeout=15000)
+                assert any(__import__('json').loads(t['context_json']).get('host_operation')=='chrome_probe' for t in store.tasks())
+                page.get_by_role('button',name='마지막 Chrome 도구 상태',exact=True).click()
+                expect(page.locator('#runtime-chrome-status')).to_contain_text('CHROME_CONNECTED')
+                assert 'fixture-secret' not in page.locator('#runtime-chrome-status').inner_text()
+                print('Web office existing Chrome probe: queued host task, safe result and status UI passed (offline fixture)')
                 page.get_by_role('button',name='퇴근',exact=True).click()
                 expect(page.locator('#runtime-status')).to_contain_text('퇴근')
                 print('Web office browser: pairing, clock-in, command, conversation, avatar inbox, review and clock-out passed')

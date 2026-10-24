@@ -92,6 +92,9 @@ class WebOffice:
             if path=='/api/sources':
                 from office import knowledge
                 return {'sources':knowledge.sources(store,q.get('project',[None])[0]),'profile':knowledge.profile(store)}
+            if path=='/api/chrome':
+                from office.chrome_connection import latest
+                return latest(store)
             if path=='/api/ego':
                 from office.ego_diagnostics import status
                 return status(store)
@@ -101,7 +104,7 @@ class WebOffice:
             if path=='/api/runtime/url':
                 from office.app_server import external_url
                 return {'url':external_url(store,q['id'][0])}
-            if path=='/api/health':return {'ok':True,'version':'0.20.0','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.20.1','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))
@@ -121,6 +124,9 @@ class WebOffice:
         if path=='/api/clock':
             if b['on']:require_login();store.clock_in()
             else:store.pause()
+        elif path=='/api/chrome-probe':
+            identifier=store.submit('dev','기존 Chrome 연결 복구 진단: 실제 cua_repl 도구와 연결 상태만 확인합니다. 로그인·게시·설정 변경은 하지 않습니다.',identifier=b['request_id'],project_id=b['project_id'],browser_mode='standard',host_operation='chrome_probe')
+            return {'id':identifier,'thread':store.thread_id(identifier)}
         elif path=='/api/ego-diagnose':
             from office.ego_diagnostics import diagnose
             return diagnose(store,page=b.get('page') is True)

@@ -103,6 +103,7 @@ def run_codex(store, task, end):
     from office.browser_modes import mode,prepare
     from office.browser_timing import BrowserTiming
     selected=mode(task)
+    diagnostic=json.loads(task.get('context_json') or '{}').get('host_operation')=='chrome_probe'
     timing=BrowserTiming()
     if task.get('action_json'):
         from office.actions import run_action
@@ -165,10 +166,10 @@ def run_codex(store, task, end):
         prompt+='\n필수 산출물 파일: '+task.get('expected_json','[]')+' · 이 파일이 없거나 비어 있으면 검증 실패로 처리합니다.\n'
         prompt += '\n현재 업무:\n' + task['prompt']
         try:
-            browser_args,browser_policy=prepare(task,codex_command(),working_directory,env)
+            browser_args,browser_policy=prepare(task,codex_command(),working_directory,env,state_root=store.root)
         except Exception as error:
             return {'status':'blocked','error':'브라우저 모드 준비 실패: '+safe_diagnostic(error),
-                    'evidence':{'environment':{'browser_mode':selected},'browser_timing':timing.summary()}}
+                    'evidence':{'environment':{'browser_mode':selected,'office_version':'0.20.1','stage':task.get('kind','single')},'browser_timing':timing.summary()}}
         args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
@@ -185,21 +186,45 @@ def run_codex(store, task, end):
         kwargs = {'start_new_session': True} if os.name != 'nt' else {'creationflags': subprocess.CREATE_NEW_PROCESS_GROUP}
         with store.connect() as con:
             runtime_mode=store._get(con,'runtime_mode','exec')
+        environment['configured_runtime']=runtime_mode
+        if diagnostic:runtime_mode='appserver'
         environment['runtime']=runtime_mode
-        if runtime_mode=='appserver':
+        environment['office_version']='0.20.1'
+        if runtime_mode=='appserver' or diagnostic:
             from office.app_server import execute
             from types import SimpleNamespace
             try:
-                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args,browser_args=browser_args,timing=timing)
+                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args,browser_args=browser_args,timing=timing,browser_policy=browser_policy.get('chrome'),diagnostic=diagnostic)
             except Exception as error:
+                from office.chrome_connection import latest
                 return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
-                        'evidence':{'browser_timing':timing.summary(),'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id'])}}
+                        'evidence':{'browser_timing':timing.summary(),'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id']),'browser_tools':latest(store,task['id'])}}
+            environment['browser_tools']=result.get('browser_tools',{})
+            if diagnostic:
+                status=result.get('browser_tools',{}).get('status')
+                return {'status':'review' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else 'blocked',
+                        'output':result['text'],'error':'' if status in ('CHROME_CONNECTED','STATE_CALL_OK') else '기존 Chrome 연결 복구 진단: '+str(status),
+                        'evidence':{'environment':environment,'browser_tools':result.get('browser_tools',{}),'browser_timing':timing.summary(),'commands':[],'external_tools':[],'changes':[],'artifacts':[]}}
             output.write_text(result['text'],encoding='utf-8')
             stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
             stderr.write_text('',encoding='utf-8')
             process=SimpleNamespace(returncode=0)
             environment.update(runtime_session=result['session'],runtime_thread=result['thread'],runtime_turn=result['turn'])
         else:
+            if browser_policy.get('chrome',{}).get('required'):
+                from office.browser_modes import Inventory
+                from office.chrome_connection import require_catalog
+                check=None
+                try:
+                    check=Inventory(codex_command(),working_directory,env,browser_args)
+                    thread=check.call('thread/start',{'cwd':working_directory,'sandbox':'workspace-write' if writable else 'read-only','approvalPolicy':'on-request','approvalsReviewer':'user'})
+                    inventory,_=require_catalog(check.call,thread['thread']['id'],browser_policy['chrome'],store,task['id'])
+                    environment['browser_tools']=inventory
+                except Exception:
+                    from office.chrome_connection import latest
+                    return {'status':'blocked','error':'기존 실행기 브라우저 연결 확인 실패. 실제 도구 상태를 확인하고 승인 입력이 필요하면 대화형 실행기를 사용하세요.','evidence':{'environment':environment,'browser_tools':latest(store,task['id'])}}
+                finally:
+                    if check:check.close()
             with stdout.open('w', encoding='utf-8') as out, stderr.open('w', encoding='utf-8') as err:
                 process = subprocess.Popen(args, cwd=working_directory, env=env, stdin=subprocess.PIPE, stdout=out, stderr=err, text=True, encoding='utf-8', **kwargs)
                 live=LiveEvents(store,task,stdout,timing=timing)

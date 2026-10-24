@@ -169,3 +169,9 @@ GitHub 인증 후 수동 실행하는 직무별 AI 초안 워크플로, Response
 - skills.config와 관련 mcp_servers.enabled 설정을 두 실행기에 적용하고 실효 카탈로그 검증을 추가했다. 전역 설정·인증은 복사하거나 수정하지 않는다.
 - 공식 ego CLI 진단, 페이지 확인과 연결 확인 구분, 시작/완료 이벤트 관측 시간을 추가했다. 제공되지 않은 세부 시간은 null이다.
 - 실제 Windows ego와 셸까지 포함하는 OS 격리는 미검증/미완료다. 기본 모드의 스킬/MCP 비활성화를 임의 CLI 실행 차단과 혼동하지 않는다. PR은 Draft로 유지한다. 단계별 경계와 명령은 docs/BROWSER_MODES.md에 기록했다.
+
+## 2026-10-24 — 기존 Chrome 연결 복구 후보 (v0.20.1 / PR #1)
+
+- 사용자 실무 기록으로 shell 정상과 node_repl 실행 도구 미발견을 구분했다. 이전 cua_repl 성공과 현재 Browser 문서의 의존성 차이를 기록했다. ego 설치의 직접 원인은 입증되지 않았다.
+- 기존 MCP만 대상으로 첫 모델 턴 이전 도구 조회, 실행별 required/cwd 복구, 실제 cua.getState 진단 업무와 기존 승인함 연동을 추가했다. 새 브라우저 도구 설치·자격증명 복사·권한 우회는 추가하지 않았다.
+- 스킬/MCP/실제 연결 성공을 구분하고 사용자 PC 검증 미완료를 docs/CHROME_RECOVERY.md에 명시했다.

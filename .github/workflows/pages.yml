@@ -35,6 +35,8 @@ jobs:
         run: python -m office.protocol_probe --codex "$RUNNER_TEMP/office-protocol/node_modules/.bin/codex"
       - name: Verify browser mode catalog controls with real Codex (no inference)
         run: python -m scripts.probe_browser_modes --codex "$RUNNER_TEMP/office-protocol/node_modules/.bin/codex"
+      - name: Verify existing CUA reconnection with real Codex and offline MCP
+        run: python -m scripts.probe_chrome_connection --codex "$RUNNER_TEMP/office-protocol/node_modules/.bin/codex"
       - run: python -m playwright install --with-deps chromium
       - run: python -m scripts.test_browser_adapter
       - run: python -m scripts.test_web_office

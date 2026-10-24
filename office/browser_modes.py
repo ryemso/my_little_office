@@ -30,7 +30,7 @@ class Inventory:
         self.transport=Transport(command+['app-server','--listen','stdio://',*overrides],cwd,env)
         self.serial=0
         try:
-            self.call('initialize',{'clientInfo':{'name':'office_browser_policy','version':'1'}})
+            self.call('initialize',{'clientInfo':{'name':'office_browser_policy','version':'1'},'capabilities':{'experimentalApi':True}})
             self.transport.send({'method':'initialized'})
         except Exception:self.close();raise
 
@@ -40,6 +40,10 @@ class Inventory:
         until=time.monotonic()+12
         while time.monotonic()<until:
             value=self.transport.receive()
+            if value and 'id' in value and 'method' in value:
+                # No diagnostic path may silently accept an interactive request.
+                self.transport.send({'id':value['id'],'error':{'code':-32601,'message':'Use the interactive office runtime for this request.'}})
+                raise RuntimeError('AUTH_REQUIRED: 대화형 실행기에서 사용자 확인이 필요합니다.')
             if value and value.get('id')==identifier:
                 if 'error' in value:raise RuntimeError('브라우저 모드 설정 조회 실패: '+method)
                 return value.get('result',{})
@@ -59,13 +63,15 @@ class Inventory:
     def close(self):self.transport.close()
 
 
-def overrides(config,skills,selected):
+def overrides(config,skills,selected,disabled_paths=()):
     """Preserve unrelated skill overrides; never enable a disabled MCP server."""
     controlled=[s for s in skills if is_ego(s.get('name')) or is_ego(s.get('pluginId','')) or is_ego(s.get('path'))]
     settings=list((config.get('skills') or {}).get('config') or [])
     paths={str(s['path']) for s in controlled}
     settings=[s for s in settings if str(s.get('path')) not in paths and str(Path(s.get('path',''))/'SKILL.md') not in paths]
     settings.extend({'path':s['path'],'enabled':selected=='ego'} for s in controlled)
+    settings=[s for s in settings if s.get('path') not in disabled_paths]
+    settings.extend({'path':path,'enabled':False} for path in disabled_paths)
     args=['-c','skills.config='+'['+','.join('{path='+json.dumps(s['path'])+',enabled='+str(s.get('enabled',True)).lower()+'}' for s in settings)+']'] if settings else []
     servers=config.get('mcp_servers') or {}
     dependencies={d.get('value') for s in controlled for d in (s.get('dependencies') or {}).get('tools',[]) if d.get('type')=='mcp'}
@@ -79,12 +85,17 @@ def overrides(config,skills,selected):
     return args,controlled,affected
 
 
-def prepare(task,command,cwd,env,base_args=()):
+def prepare(task,command,cwd,env,base_args=(),state_root=None):
     selected=mode(task);start=time.monotonic()
     inventory=Inventory(command,cwd,env,base_args)
     try:config,skills=inventory.read(cwd)
     finally:inventory.close()
-    args,controlled,servers=overrides(config,skills,selected)
+    chrome={};chrome_args=[];disabled=[]
+    from office.chrome_connection import required,launch_overrides
+    if selected=='standard' and required(task):
+        chrome_args,disabled,chrome=launch_overrides(config,skills,state_root or cwd)
+    args,controlled,servers=overrides(config,skills,selected,disabled)
+    args+=chrome_args
     if selected=='ego':
         if not any(s.get('name')=='ego-browser' for s in controlled):raise RuntimeError('SKILL_MISSING: Codex에서 ego-browser 스킬을 찾지 못했습니다.')
         from office.ego_diagnostics import inspect_local
@@ -97,8 +108,10 @@ def prepare(task,command,cwd,env,base_args=()):
         enabled=[s for s in available if s.get('enabled') and (is_ego(s.get('name')) or is_ego(s.get('pluginId','')) or is_ego(s.get('path')))]
         if selected=='standard' and (enabled or any((effective.get('mcp_servers') or {}).get(s,{}).get('enabled',True) for s in servers)):
             raise RuntimeError('POLICY_BLOCKED: 기본 모드의 스킬/MCP 비활성화 검증 실패')
+        if any(s.get('enabled') and s.get('path') in disabled for s in available):
+            raise RuntimeError('POLICY_BLOCKED: 기존 CUA와 호환되지 않는 Browser 스킬의 실행별 분리를 적용하지 못했습니다.')
         if selected=='ego' and not any(s.get('name')=='ego-browser' for s in enabled):raise RuntimeError('POLICY_BLOCKED: ego 스킬 활성화가 상위 정책에 의해 차단됐습니다.')
     finally:check.close()
     return args,{'mode':selected,'catalog_verified':True,'ego_skills':len(controlled),'ego_mcp_servers':len(servers),
                  'preparation_ms':round((time.monotonic()-start)*1000,2),
-                 'scope':'codex_skill_mcp_catalog','host_shell_isolated':False}
+                 'scope':'codex_skill_mcp_catalog','host_shell_isolated':False,'chrome':chrome}
