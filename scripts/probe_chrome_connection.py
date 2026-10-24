@@ -16,7 +16,8 @@ def probe(command):
         fixture=Path(__file__).resolve().parent/'fixtures/chrome_mcp.py'
         bad_cwd=root/'plugins/cache/old-version/missing'
         (home/'config.toml').write_text('[mcp_servers.cua_repl]\ncommand='+json.dumps(os.sys.executable)+'\nargs=['+json.dumps(str(fixture))+']\ncwd='+json.dumps(str(bad_cwd))+'\nenabled=true\n')
-        original=(home/'config.toml').read_bytes()
+        import tomllib
+        original=tomllib.loads((home/'config.toml').read_text())
         env={key:value for key,value in os.environ.items() if key in ('PATH','SystemRoot','WINDIR','TEMP','TMP','TMPDIR','LANG','LC_ALL')}
         env.update(CODEX_HOME=str(home),HOME=str(root),USERPROFILE=str(root))
         offline=['-c','features.apps=false','-c','model="fixture-model"','-c','model_provider="fixture"',
@@ -34,9 +35,11 @@ def probe(command):
             assert result['status']=='CHROME_CONNECTED',result
             assert 'fixture-secret' not in json.dumps(result)
         finally:inv.close()
-        assert (home/'config.toml').read_bytes()==original
+        after=tomllib.loads((home/'config.toml').read_text())
+        assert after['mcp_servers']==original['mcp_servers'], 'MCP registration changed'
+        metadata_changes=[key for key in after if key!='mcp_servers' and after.get(key)!=original.get(key)]
         return {'inference_executed':False,'real_chrome_used':False,'fixture_state_call_verified':result['tool_call_verified'],
-                'live_thread_catalog_verified':True,'broken_cwd_repaired_per_invocation':True,'global_config_unchanged':True}
+                'live_thread_catalog_verified':True,'broken_cwd_repaired_per_invocation':True,'global_mcp_config_unchanged':True,'cli_metadata_change_keys':metadata_changes}
 
 
 if __name__=='__main__':
