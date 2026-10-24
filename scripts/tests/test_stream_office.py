@@ -124,7 +124,7 @@ class CodexAdapterTests(unittest.TestCase):
                 kwargs['stdout'].write(json.dumps({'type':'turn.completed','usage':{'input_tokens':10}})+'\n')
                 kwargs['stdout'].flush()
                 return SimpleNamespace(stdin=io.StringIO(), returncode=0, poll=lambda:0)
-            with patch('office.engine.require_login'), patch('office.engine.codex_command',return_value=['codex']), patch('office.engine.subprocess.Popen',side_effect=fake):
+            with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'), patch('office.engine.codex_command',return_value=['codex']), patch('office.engine.subprocess.Popen',side_effect=fake):
                 result=run_codex(store,task,time.time()+10)
             self.assertEqual(result['status'],'review')
             self.assertEqual(result['usage']['input_tokens'],10)
@@ -132,7 +132,7 @@ class CodexAdapterTests(unittest.TestCase):
                 kwargs['stderr'].write('usage limit reached')
                 kwargs['stderr'].flush()
                 return SimpleNamespace(stdin=io.StringIO(), returncode=1, poll=lambda:1)
-            with patch('office.engine.require_login'), patch('office.engine.codex_command',return_value=['codex']), patch('office.engine.subprocess.Popen',side_effect=failure):
+            with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'), patch('office.engine.codex_command',return_value=['codex']), patch('office.engine.subprocess.Popen',side_effect=failure):
                 self.assertEqual(run_codex(store,task,time.time()+10)['status'],'quota_wait')
 
     def test_publish_keeps_remote_tasks_and_excludes_pending(self):

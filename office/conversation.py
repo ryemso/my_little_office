@@ -65,8 +65,8 @@ class Conversations:
 
 class LiveEvents:
     """Tail complete JSONL records without reading the whole growing log repeatedly."""
-    def __init__(self,store,task,path):
-        self.store=store;self.task=task;self.path=path;self.offset=0;self.pending=b''
+    def __init__(self,store,task,path,timing=None):
+        self.store=store;self.task=task;self.path=path;self.offset=0;self.pending=b'';self.timing=timing
 
     def poll(self,final=False):
         from office.engine import safe_diagnostic
@@ -81,6 +81,7 @@ class LiveEvents:
             item=event.get('item')
             if not isinstance(item,dict):continue
             event_type=event.get('type');kind=item.get('type')
+            if self.timing:self.timing.observe(event_type,item)
             if kind=='command_execution' and event_type in ('item.started','item.completed'):
                 body='명령 실행 시작' if event_type=='item.started' else '명령 실행 종료 · 종료 코드 '+str(item.get('exit_code','미확인'))
                 body+='\n'+str(item.get('command',''))[:3000]

@@ -79,7 +79,11 @@ class Transport:
 
 
 class AppServerRun:
-    def __init__(self, store, task, transport, end):
+    def __init__(self, store, task, transport, end, timing=None, browser_policy=None):
+        self.timing=timing
+        self.browser_policy=browser_policy or {}
+        self.browser_inventory={}
+        self.starting_thread=False
         self.store=store;self.task=task;self.transport=transport;self.deadline=end
         self.broker=store.runtime;self.session=self.broker.session(task['id'])
         self.thread=None;self.turn=None;self.serial=0;self.responses={};self.pending={};self.events=[]
@@ -111,7 +115,9 @@ class AppServerRun:
             self.failure='실행기 요청을 처리하지 못했습니다. 요청: '+diagnostic['method']+' · 형식: '+diagnostic['shape']['mode']+' · 사유: '+diagnostic['reason']+' 권한을 우회하지 않았습니다.'
             return
         self.pending[key]={'id':identifier,'request':request_id,'method':method,'params':params,'sent':False,'created':time.time()}
-        if self.wait_started is None:self.wait_started=time.monotonic()
+        if self.wait_started is None:
+            self.wait_started=time.monotonic()
+            if self.timing:self.timing.approval_wait(True)
 
     def _deliver(self):
         for pending in list(self.pending.values()):
@@ -140,6 +146,7 @@ class AppServerRun:
         if not self.pending and self.wait_started is not None:
             self.deadline+=time.monotonic()-self.wait_started
             self.wait_started=None
+            if self.timing:self.timing.approval_wait(False)
             self.store.activity(self.task['id'],'executing','실행기 응답 처리 확인 · 작업 재개')
 
     def tick(self):
@@ -158,14 +165,20 @@ class AppServerRun:
         if 'id' in message:
             self.responses[message['id']]=message;return
         method=message.get('method');params=message.get('params',{})
-        if method=='turn/started':
+        if method=='thread/started' and self.starting_thread and self.thread is None:
+            identifier=params.get('thread',{}).get('id')
+            if isinstance(identifier,str):
+                self.thread=identifier;self.broker.bind(self.session,self.thread)
+        elif method=='turn/started':
             self.turn=params['turn']['id'];self.broker.bind(self.session,self.thread,self.turn)
         elif method=='serverRequest/resolved':
             if params.get('threadId')==self.thread:self._resolved(params['requestId'])
         elif method=='item/started':
+            if self.timing:self.timing.observe(method,params.get('item',{}))
             kind=params.get('item',{}).get('type')
             self.store.activity(self.task['id'],'syncing' if kind=='mcpToolCall' else 'executing','연결 도구 호출 중' if kind=='mcpToolCall' else '실행기 작업 시작')
         elif method=='item/completed':
+            if self.timing:self.timing.observe(method,params.get('item',{}))
             item=params.get('item',{});kind=item.get('type')
             # Explicit origin/tool denial must not turn into success via a report.
             if kind=='mcpToolCall':
@@ -188,16 +201,64 @@ class AppServerRun:
             self.completed=True
         elif method=='error':self.failure='실행기가 오류 이벤트를 반환했습니다.'
 
-    def run(self, prompt, cwd, writable, images):
+    def start_thread(self,cwd,writable):
+        self.rpc('initialize',{'clientInfo':{'name':'my_little_office','title':'My Little Office','version':'0.20'},
+                               'capabilities':{'experimentalApi':True,'mcpServerOpenaiFormElicitation':True}})
+        self.transport.send({'method':'initialized'})
+        if self.browser_policy.get('required'):
+            from office.chrome_connection import record_snapshot
+            initial={key:self.browser_policy[key] for key in ('skills','repairs','configured','feature_flags','cli_version','office_version','ego_skill_present') if key in self.browser_policy}
+            initial.update(status='STARTING',task_id=self.task['id'],checked_at=time.time(),tool_call_verified=False,chrome_connection_verified=False)
+            record_snapshot(self.store,initial)
+        self.starting_thread=True
         try:
-            self.rpc('initialize',{'clientInfo':{'name':'my_little_office','title':'My Little Office','version':'0.19'},
-                                   'capabilities':{'mcpServerOpenaiFormElicitation':True}})
-            self.transport.send({'method':'initialized'})
             thread=self.rpc('thread/start',{'cwd':cwd,'sandbox':'workspace-write' if writable else 'read-only',
                                            'approvalPolicy':'on-request','approvalsReviewer':'user'})
-            if thread.get('approvalPolicy')!='on-request' or thread.get('approvalsReviewer')!='user':
-                raise RuntimeError('실효 승인 정책이 사용자 확인 모드가 아닙니다. 상위 정책을 확인하세요.')
-            self.thread=thread['thread']['id'];self.broker.bind(self.session,self.thread)
+        finally:self.starting_thread=False
+        if thread.get('approvalPolicy')!='on-request' or thread.get('approvalsReviewer')!='user':
+            raise RuntimeError('실효 승인 정책이 사용자 확인 모드가 아닙니다. 상위 정책을 확인하세요.')
+        identifier=thread['thread']['id']
+        if self.thread is not None and self.thread!=identifier:raise RuntimeError('스레드 시작 응답이 현재 연결과 다릅니다.')
+        if self.thread is None:
+            self.thread=identifier;self.broker.bind(self.session,self.thread)
+
+    def check_browser(self):
+        from office.chrome_connection import require_catalog
+        try:
+            result,tool=require_catalog(self.rpc,self.thread,self.browser_policy,self.store,self.task['id'])
+        finally:
+            from office.chrome_connection import latest
+            self.browser_inventory=latest(self.store,self.task['id'])
+        return result,tool
+
+    def run_probe(self,cwd,writable):
+        from office.chrome_connection import state_call,record_snapshot
+        try:
+            self.start_thread(cwd,writable)
+            result,tool=self.check_browser()
+            result=state_call(self.rpc,self.thread,result,tool,record=lambda snapshot:record_snapshot(self.store,snapshot))
+            # A direct MCP call can resolve its request before the resolved event
+            # reaches the transport. Drain the existing request, never resend.
+            while self.pending:self.tick()
+            if self.failure or self.denied:raise RuntimeError(self.failure or '진단 요청이 거절됐습니다.')
+            self.browser_inventory=result
+            record_snapshot(self.store,result)
+            self.terminal_state='completed'
+            return {'text':json.dumps(result,ensure_ascii=False,indent=2),'events':[],
+                    'session':self.session,'thread':self.thread,'turn':None,'browser_tools':result,'diagnostic':True}
+        finally:
+            self.broker.end(self.session,self.terminal_state)
+            self.transport.close()
+
+    def run(self, prompt, cwd, writable, images):
+        try:
+            self.start_thread(cwd,writable)
+            if self.browser_policy.get('required'):
+                self.check_browser()
+                selected=self.browser_inventory['selected']
+                prompt+='\n앱이 현재 직원 스레드에서 확인한 실제 브라우저 도구: '+json.dumps(selected,ensure_ascii=False)
+                if selected['provider']=='cua_repl':
+                    prompt+='\n대표가 복구를 요청한 기존 Chrome 경로는 연결된 cua_repl입니다. 첫 호출은 await cua.getState(); 로 도구가 제공하는 전체 설명을 읽으세요. 설치 문서가 다른 node_repl을 요구한다는 이유로 실제 cua_repl 도구가 없다고 보고하지 마세요. 도구의 정식 문서와 승인 절차를 따르며 거절 시 중단하세요.\n'
             inputs=[{'type':'text','text':prompt}]+[{'type':'localImage','path':str(path)} for path in images]
             response=self.rpc('turn/start',{'threadId':self.thread,'input':inputs})
             self.turn=response['turn']['id']
@@ -209,7 +270,7 @@ class AppServerRun:
             if self.denied:raise RuntimeError('도구 접근 또는 실행 승인이 거절됐습니다. 보고서 작성으로 원래 업무를 완료 처리하지 않습니다.')
             self.terminal_state='completed'
             return {'text':'\n\n'.join(self.final),'events':self.events+[{'type':'turn.completed'}],
-                    'session':self.session,'thread':self.thread,'turn':self.turn}
+                    'session':self.session,'thread':self.thread,'turn':self.turn,'browser_tools':self.browser_inventory}
         finally:
             if self.terminal_state!='completed' and self.thread and self.turn:
                 try:self.transport.send({'id':'interrupt','method':'turn/interrupt','params':{'threadId':self.thread,'turnId':self.turn}})
@@ -229,18 +290,18 @@ def convert_item(item):
     if kind=='webSearch':return {'id':item.get('id'),'type':'web_search','action':{'observed':True}}
 
 
-def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None):
+def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None, browser_args=None, timing=None, browser_policy=None, diagnostic=False):
     info=inspect_cli(command)
     if not info['supported']:raise RuntimeError('대화형 실행기 검증 버전은 '+TESTED_VERSION+'입니다. 연결 진단에서 버전을 확인하세요.')
-    args=command+['app-server','--listen','stdio://','-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"']+(windows_args or [])
+    args=command+['app-server','--listen','stdio://','-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"']+(windows_args or [])+(browser_args or [])
     if writable:
         project=store.project(task['project_id'])
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end)
+    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.1'))
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
-    try:return runner.run(prompt,cwd,writable,images)
+    try:return runner.run_probe(cwd,writable) if diagnostic else runner.run(prompt,cwd,writable,images)
     finally:
         with ACTIVE_LOCK:ACTIVE.pop(runner.session,None)
 

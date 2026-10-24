@@ -46,7 +46,7 @@ class WorkspaceTests(unittest.TestCase):
             kwargs['stdout'].write('\n'.join(json.dumps(e) for e in events));kwargs['stdout'].flush()
             Path(args[args.index('-o')+1]).write_text('実装と테스트 프로젝트を実行しました',encoding='utf-8')
             return SimpleNamespace(stdin=io.StringIO(),returncode=0,poll=lambda:0)
-        with patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake_codex):
+        with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake_codex):
             result=run_codex(self.store,task,time.time()+20)
         self.assertEqual(result['status'],'review')
         self.assertEqual(result['evidence']['commands'][0]['exit_code'],0)
@@ -110,7 +110,7 @@ class WorkspaceTests(unittest.TestCase):
             kwargs['stdout'].flush()
             Path(args[args.index('-o')+1]).write_text('검증에 실패한 상태입니다',encoding='utf-8')
             return SimpleNamespace(stdin=io.StringIO(),returncode=0,poll=lambda:0)
-        with patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
+        with patch('office.browser_modes.prepare',return_value=([],{'catalog_verified':True,'fixture':True})),patch('office.engine.require_login'),patch('office.engine.codex_command',return_value=['codex']),patch('office.engine.subprocess.Popen',side_effect=fake):
             result=run_codex(self.store,task,time.time()+10)
         self.assertEqual(result['status'],'failed')
         self.assertIn('테스트',result['error'])
