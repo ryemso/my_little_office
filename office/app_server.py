@@ -198,7 +198,7 @@ class AppServerRun:
                                    'capabilities':{'experimentalApi':True,'mcpServerOpenaiFormElicitation':True}})
             self.transport.send({'method':'initialized'})
             thread=self.rpc('thread/start',{'cwd':cwd,'sandbox':'workspace-write' if writable else 'read-only',
-                                           'approvalPolicy':'on-request','approvalsReviewer':'user'})
+                                           'approvalPolicy':'on-request','approvalsReviewer':'user'},timeout=70 if self.browser_requested else 30)
             if thread.get('approvalPolicy')!='on-request' or thread.get('approvalsReviewer')!='user':
                 raise RuntimeError('실효 승인 정책이 사용자 확인 모드가 아닙니다. 상위 정책을 확인하세요.')
             self.thread=thread['thread']['id'];self.broker.bind(self.session,self.thread)
