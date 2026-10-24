@@ -70,7 +70,7 @@
     "scripts/enqueue_task.py": "dc072b29cccd7573dbd2232fe5c448aa90117fc0eda0e4f5ecdc656cddf84ece",
     "scripts/fixtures/runtime_server.py": "a6363ebe173e5bd179b45ab458aa29fd1ca3fdeaf77a867d10d559e809cd2b32",
     "scripts/local_office.py": "a7d75d17b7ff7d83b21f48f1a06a3732d317bc8f007a9023b91413d43cef5eac",
-    "scripts/probe_devtools_connection.py": "109c62a8579a10dd2f06e167688bc18f5c66a8d7985989fa0abf2c8aa1faaf30",
+    "scripts/probe_devtools_connection.py": "3008287e44c16ac5776227f71732a7ea74c31b07d726c81d30f0f677fafd2c03",
     "scripts/push_agent.py": "e5415c51ce0e9dd732a0f9004e38917aa29a779cff4c36f6283d78a3438ac747",
     "scripts/run_task.py": "b13723b7249d90f33cc48d3c9af98e823960513ad768685c5b0732a0540b3771",
     "scripts/test_browser_adapter.py": "a3ef71ca58e55c473e86f67ca85122ff09ed7f9c789e74359c9ce32f42352998",

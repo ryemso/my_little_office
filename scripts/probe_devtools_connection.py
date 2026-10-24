@@ -3,6 +3,9 @@
 Uses an empty temporary Codex home and offline model URL; no inference or account.
 """
 import json
+import errno
+import shutil
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import tempfile
@@ -12,8 +15,25 @@ from office.browser_tools import prepare,catalog
 from office.store import Store
 
 
+@contextmanager
+def diagnostic_directory():
+    directory=tempfile.mkdtemp(prefix='office-devtools-',dir=Path.cwd())
+    try:yield directory
+    finally:
+        # npm/Codex children may finish local cache metadata just after transport
+        # shutdown. Retry ENOTEMPTY only; never suppress a persistent cleanup error.
+        for attempt in range(10):
+            try:
+                shutil.rmtree(directory)
+                break
+            except FileNotFoundError:break
+            except OSError as error:
+                if error.errno!=errno.ENOTEMPTY or attempt==9:raise
+                time.sleep(.1)
+
+
 def probe(codex):
-    with tempfile.TemporaryDirectory(prefix='office-devtools-',dir=Path.cwd()) as directory:
+    with diagnostic_directory() as directory:
         root=Path(directory);home=root/'home';home.mkdir();work=root/'work';work.mkdir()
         config='[mcp_servers.chrome-devtools]\ncommand="npx"\nargs=["-y","chrome-devtools-mcp@1.12.0","--autoConnect","--no-usage-statistics"]\n'
         (home/'config.toml').write_text(config)
