@@ -24,3 +24,16 @@ class BatchReviewTests(unittest.TestCase):
         with self.assertRaises(ValueError):self.store.complete_many([row,row])
         identifier=self.store.submit('dev','아직 실행하지 않은 업무')
         with self.assertRaises(ValueError):self.store.complete_many([{'id':identifier,'version':self.store.get(identifier)['updated']}])
+    def test_attention_batch_preserves_failed_status_and_is_atomic(self):
+        ids=[]
+        for index in range(2):
+            identifier=self.store.submit('dev','차단 상태 확인 '+str(index));self.store.claim()
+            self.store.finish(identifier,{'status':'blocked','error':'missing bridge'})
+            ids.append(identifier)
+        rows=[{'id':i,'version':self.store.get(i)['updated']} for i in ids]
+        bad=[dict(r) for r in rows];bad[1]['version']-=1
+        with self.assertRaises(ValueError):self.store.acknowledge_many(bad)
+        self.assertEqual(len(self.store.pending_decisions()),2)
+        self.assertEqual(self.store.acknowledge_many(rows),2)
+        self.assertEqual(self.store.pending_decisions(),[])
+        self.assertTrue(all(self.store.get(i)['status']=='blocked' for i in ids))
