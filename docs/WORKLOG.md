@@ -166,3 +166,9 @@ GitHub 인증 후 수동 실행하는 직무별 AI 초안 워크플로, Response
 ## 2026-10-25 — v0.19.4: restore bulk review only
 
 Restore batch result completion and separate failed/blocked acknowledgement in web and Streamlit inboxes on the pre-ego v0.19.3 codebase. Version-checked SQLite transactions reject stale or mixed targets atomically. These actions do not apply files, approve tools, retry work or publish. No ego/browser-mode modules, bridge launch overrides or new runtime settings are restored. Browser skill availability remains dependent on the user's external plugin environment.
+
+## 2026-10-25 — v0.19.5: Chrome DevTools MCP worker readiness
+
+Owner confirmed Codex TUI connected to chrome-devtools (32 tools) and actual list_pages succeeded. The office previously started the model turn without checking that worker thread's MCP readiness, leaving startup/discovery differences invisible. This does not establish one unique root cause for the earlier model report. Browser work now reads the registration with the same executable, cwd and environment as the worker; only the explicitly registered chrome-devtools gets a per-invocation 60-second startup allowance. In app-server mode, query the actual thread's server catalog before the first model turn and pass the observed tool names to the worker. Empty, failed or disabled registration stops the browser task with a concrete error. Auth unsupported is not a failure. No automatic browser action, fallback, global config write or restored ego mode. Existing interactive approvals remain unchanged.
+
+Add a real Codex 0.163.0 + official chrome-devtools-mcp 1.12.0 catalog contract with a fresh temporary home/offline model URL, no account or real browser operation. Actual owner-PC worker execution remains to be validated after update.

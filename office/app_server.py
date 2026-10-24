@@ -79,7 +79,8 @@ class Transport:
 
 
 class AppServerRun:
-    def __init__(self, store, task, transport, end):
+    def __init__(self, store, task, transport, end, browser_requested=False):
+        self.browser_requested=browser_requested;self.browser_tools={}
         self.store=store;self.task=task;self.transport=transport;self.deadline=end
         self.broker=store.runtime;self.session=self.broker.session(task['id'])
         self.thread=None;self.turn=None;self.serial=0;self.responses={};self.pending={};self.events=[]
@@ -95,7 +96,10 @@ class AppServerRun:
             if time.monotonic()>=until:raise RuntimeError('실행기 요청 응답 시간 초과: '+method)
             self.tick()
         result=self.responses.pop(identifier)
-        if 'error' in result:raise RuntimeError('실행기가 요청을 거절했습니다: '+method)
+        if 'error' in result:
+            from office.engine import safe_diagnostic
+            error=result['error'] if isinstance(result['error'],dict) else {}
+            raise RuntimeError('실행기가 요청을 거절했습니다: '+method+' · 코드: '+str(error.get('code'))+' · 사유: '+safe_diagnostic(error.get('message','상세 사유 없음'))[:1200])
         return result.get('result',{})
 
     def _server_request(self, message):
@@ -191,13 +195,17 @@ class AppServerRun:
     def run(self, prompt, cwd, writable, images):
         try:
             self.rpc('initialize',{'clientInfo':{'name':'my_little_office','title':'My Little Office','version':'0.19'},
-                                   'capabilities':{'mcpServerOpenaiFormElicitation':True}})
+                                   'capabilities':{'experimentalApi':True,'mcpServerOpenaiFormElicitation':True}})
             self.transport.send({'method':'initialized'})
             thread=self.rpc('thread/start',{'cwd':cwd,'sandbox':'workspace-write' if writable else 'read-only',
                                            'approvalPolicy':'on-request','approvalsReviewer':'user'})
             if thread.get('approvalPolicy')!='on-request' or thread.get('approvalsReviewer')!='user':
                 raise RuntimeError('실효 승인 정책이 사용자 확인 모드가 아닙니다. 상위 정책을 확인하세요.')
             self.thread=thread['thread']['id'];self.broker.bind(self.session,self.thread)
+            if self.browser_requested:
+                from office.browser_tools import catalog
+                self.browser_tools,tool_prompt=catalog(self.rpc,self.thread)
+                prompt+=tool_prompt
             inputs=[{'type':'text','text':prompt}]+[{'type':'localImage','path':str(path)} for path in images]
             response=self.rpc('turn/start',{'threadId':self.thread,'input':inputs})
             self.turn=response['turn']['id']
@@ -209,7 +217,7 @@ class AppServerRun:
             if self.denied:raise RuntimeError('도구 접근 또는 실행 승인이 거절됐습니다. 보고서 작성으로 원래 업무를 완료 처리하지 않습니다.')
             self.terminal_state='completed'
             return {'text':'\n\n'.join(self.final),'events':self.events+[{'type':'turn.completed'}],
-                    'session':self.session,'thread':self.thread,'turn':self.turn}
+                    'session':self.session,'thread':self.thread,'turn':self.turn,'browser_tools':self.browser_tools}
         finally:
             if self.terminal_state!='completed' and self.thread and self.turn:
                 try:self.transport.send({'id':'interrupt','method':'turn/interrupt','params':{'threadId':self.thread,'turnId':self.turn}})
@@ -229,7 +237,7 @@ def convert_item(item):
     if kind=='webSearch':return {'id':item.get('id'),'type':'web_search','action':{'observed':True}}
 
 
-def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None):
+def execute(store, task, command, cwd, env, prompt, writable, images, end, windows_args=None, browser_requested=False):
     info=inspect_cli(command)
     if not info['supported']:raise RuntimeError('대화형 실행기 검증 버전은 '+TESTED_VERSION+'입니다. 연결 진단에서 버전을 확인하세요.')
     args=command+['app-server','--listen','stdio://','-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"']+(windows_args or [])
@@ -238,7 +246,7 @@ def execute(store, task, command, cwd, env, prompt, writable, images, end, windo
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end)
+    runner=AppServerRun(store,task,transport,end,browser_requested=browser_requested)
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
     try:return runner.run(prompt,cwd,writable,images)
     finally:

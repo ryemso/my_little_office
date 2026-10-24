@@ -155,6 +155,11 @@ def run_codex(store, task, end):
         args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
+        from office.browser_tools import prepare
+        browser_args,browser_requested=prepare(codex_command(),working_directory,env,task)
+        windows_args+=browser_args
+        environment['chrome_devtools_requested']=browser_requested
+        if browser_requested:prompt+='\n대표가 등록한 chrome-devtools MCP로 브라우저 업무를 수행하세요. node_repl 기반 Browser 스킬과 다른 연결입니다. 실제 도구 호출로 검증하고 거절되면 중단하세요.\n'
         args[-1:-1]=windows_args
         environment.update(sandbox='workspace-write' if writable else 'read-only',cwd=working_directory,executable=args[0],stage=task.get('kind','single'),connected_tools='local Codex user config',web_search='live',network=bool(project and project.get('network')),project=project_context,preflight=preflight)
         stdout.with_suffix('.environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
@@ -172,10 +177,11 @@ def run_codex(store, task, end):
             from office.app_server import execute
             from types import SimpleNamespace
             try:
-                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args)
+                result=execute(store,task,codex_command(),working_directory,env,prompt,writable,images,end,windows_args,browser_requested=browser_requested)
             except Exception as error:
                 return {'status':'blocked','error':'대화형 실행 중단: '+safe_diagnostic(error),
                         'evidence':{'environment':environment,'runtime_requests':store.runtime.list(active=False,task_id=task['id']),'runtime_rejections':store.runtime.rejections(task['id'])}}
+            if result.get('browser_tools'):environment['browser_tools']=result['browser_tools']
             output.write_text(result['text'],encoding='utf-8')
             stdout.write_text('\n'.join(json.dumps(event,ensure_ascii=False) for event in result['events']),encoding='utf-8')
             stderr.write_text('',encoding='utf-8')
