@@ -94,7 +94,7 @@ class WebOffice:
                 return {'sources':knowledge.sources(store,q.get('project',[None])[0]),'profile':knowledge.profile(store)}
             if path=='/api/chrome':
                 from office.chrome_connection import latest
-                return latest(store)
+                result=dict(latest(store));result['current_server_version']='0.20.3';return result
             if path=='/api/ego':
                 from office.ego_diagnostics import status
                 return status(store)
@@ -104,7 +104,7 @@ class WebOffice:
             if path=='/api/runtime/url':
                 from office.app_server import external_url
                 return {'url':external_url(store,q['id'][0])}
-            if path=='/api/health':return {'ok':True,'version':'0.20.2','runtime':'web-worker'}
+            if path=='/api/health':return {'ok':True,'version':'0.20.3','runtime':'web-worker'}
             if path=='/api/daily':
                 from datetime import date
                 return store.daily_memo(date.fromisoformat(q['day'][0]))

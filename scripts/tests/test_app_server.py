@@ -79,3 +79,14 @@ class RuntimeTests(unittest.TestCase):
         message=rpc_error('thread/start',{'code':-1,'message':'token=private https://example.com/?code=private','data':{'secret':'private'}})
         self.assertNotIn('private',message)
         self.assertIn('[REDACTED]',message)
+
+    def test_probe_failure_updates_last_status(self):
+        from office.chrome_connection import latest
+        transport=Transport([sys.executable,'-u',str(FIXTURE),'thread-error'],str(FIXTURE.parent),dict(os.environ))
+        run=AppServerRun(self.store,self.task,transport,time.time()+10,browser_policy={'required':True,'office_version':'test-new'})
+        with self.assertRaises(RuntimeError):run.run_probe(str(FIXTURE.parent),True)
+        result=latest(self.store)
+        self.assertEqual(result['status'],'EXECUTION_FAILED')
+        self.assertEqual(result['office_version'],'test-new')
+        self.assertIn('-32602',result['error'])
+        self.assertNotIn('fixture-private',result['error'])

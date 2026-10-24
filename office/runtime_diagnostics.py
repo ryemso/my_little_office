@@ -6,7 +6,7 @@ def status(store):
     with store.connect() as con:
         mode=store._get(con,'runtime_mode','exec')
         diagnostic=store._get(con,'runtime_diagnostic',{})
-    return {'office_version':'0.20.2','mode':mode,'diagnostic':diagnostic,'tested_version':TESTED_VERSION,
+    return {'office_version':'0.20.3','mode':mode,'diagnostic':diagnostic,'tested_version':TESTED_VERSION,
             'exec_approval_bridge':False,'appserver_approval_bridge':True,
             'browser_origin_verified':False,
             'message':'실제 브라우저 origin 승인 경로는 사용자 PC에서 확인 전입니다. Chrome 사이트 권한과 별개입니다.'}

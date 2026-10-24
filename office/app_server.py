@@ -217,14 +217,14 @@ class AppServerRun:
         elif method=='error':self.failure='실행기가 오류 이벤트를 반환했습니다.'
 
     def start_thread(self,cwd,writable):
-        self.rpc('initialize',{'clientInfo':{'name':'my_little_office','title':'My Little Office','version':'0.20'},
-                               'capabilities':{'experimentalApi':True,'mcpServerOpenaiFormElicitation':True}})
-        self.transport.send({'method':'initialized'})
         if self.browser_policy.get('required'):
             from office.chrome_connection import record_snapshot
             initial={key:self.browser_policy[key] for key in ('skills','repairs','configured','feature_flags','cli_version','office_version','ego_skill_present') if key in self.browser_policy}
             initial.update(status='STARTING',task_id=self.task['id'],checked_at=time.time(),tool_call_verified=False,chrome_connection_verified=False)
             record_snapshot(self.store,initial)
+        self.rpc('initialize',{'clientInfo':{'name':'my_little_office','title':'My Little Office','version':'0.20'},
+                               'capabilities':{'experimentalApi':True,'mcpServerOpenaiFormElicitation':True}})
+        self.transport.send({'method':'initialized'})
         self.starting_thread=True
         try:
             thread=self.rpc('thread/start',{'cwd':cwd,'sandbox':'workspace-write' if writable else 'read-only',
@@ -261,6 +261,14 @@ class AppServerRun:
             self.terminal_state='completed'
             return {'text':json.dumps(result,ensure_ascii=False,indent=2),'events':[],
                     'session':self.session,'thread':self.thread,'turn':None,'browser_tools':result,'diagnostic':True}
+        except Exception as error:
+            from office.chrome_connection import latest
+            from office.engine import safe_diagnostic
+            snapshot=latest(self.store,self.task['id'])
+            snapshot.update(status='EXECUTION_FAILED',error=safe_diagnostic(error)[:2000],
+                            office_version=self.browser_policy.get('office_version'),checked_at=time.time())
+            record_snapshot(self.store,snapshot)
+            raise
         finally:
             self.broker.end(self.session,self.terminal_state)
             self.transport.close()
@@ -314,7 +322,7 @@ def execute(store, task, command, cwd, env, prompt, writable, images, end, windo
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.2'))
+    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.3'))
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
     try:return runner.run_probe(cwd,writable) if diagnostic else runner.run(prompt,cwd,writable,images)
     finally:

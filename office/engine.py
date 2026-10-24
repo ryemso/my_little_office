@@ -169,7 +169,7 @@ def run_codex(store, task, end):
             browser_args,browser_policy=prepare(task,codex_command(),working_directory,env,state_root=store.root)
         except Exception as error:
             return {'status':'blocked','error':'브라우저 모드 준비 실패: '+safe_diagnostic(error),
-                    'evidence':{'environment':{'browser_mode':selected,'office_version':'0.20.2','stage':task.get('kind','single')},'browser_timing':timing.summary()}}
+                    'evidence':{'environment':{'browser_mode':selected,'office_version':'0.20.3','stage':task.get('kind','single')},'browser_timing':timing.summary()}}
         args = codex_command() + ['exec', '--cd', working_directory, '--sandbox', 'workspace-write' if writable else 'read-only', '--skip-git-repo-check', '--json', '-o', str(output), '-']
         args[-1:-1]=['-c','forced_login_method="chatgpt"','-c','model_provider="openai"','-c','web_search="live"','-c','features.shell_tool='+('false' if planning else 'true')]
         windows_args,environment=windows_settings()
@@ -189,7 +189,7 @@ def run_codex(store, task, end):
         environment['configured_runtime']=runtime_mode
         if diagnostic:runtime_mode='appserver'
         environment['runtime']=runtime_mode
-        environment['office_version']='0.20.2'
+        environment['office_version']='0.20.3'
         if runtime_mode=='appserver' or diagnostic:
             from office.app_server import execute
             from types import SimpleNamespace

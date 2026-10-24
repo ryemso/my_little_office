@@ -20,7 +20,7 @@ def manifest(root=ROOT):
                 if '__pycache__' not in relative.parts and path.name != 'secrets.toml':
                     paths.add(relative.as_posix())
     paths.discard('site/data/tasks.json')  # Public runtime records change independently.
-    return {'format':1, 'version':'0.20.2', 'files':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in sorted(paths)}}
+    return {'format':1, 'version':'0.20.3', 'files':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in sorted(paths)}}
 
 
 if __name__ == '__main__':
