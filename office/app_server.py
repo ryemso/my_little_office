@@ -322,7 +322,7 @@ def execute(store, task, command, cwd, env, prompt, writable, images, end, windo
         args+=['-c','sandbox_workspace_write.network_access='+str(bool(project.get('network'))).lower()]
     if task.get('kind')=='plan':args+=['-c','features.shell_tool=false']
     transport=Transport(args,cwd,env)
-    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.4'))
+    runner=AppServerRun(store,task,transport,end,timing=timing,browser_policy=dict(browser_policy or {},cli_version=info['version'],office_version='0.20.5'))
     with ACTIVE_LOCK:ACTIVE[runner.session]=runner
     try:return runner.run_probe(cwd,writable) if diagnostic else runner.run(prompt,cwd,writable,images)
     finally:

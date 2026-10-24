@@ -70,3 +70,9 @@
 Owner PC v0.20.3 returned thread/start -32603: required node_repl failed to initialize, Windows os error 3. This confirms a launch path failure, not an origin approval rejection. The missing path itself is not present in that response. Diagnostics now inspect the registered executable and script file existence, without logging environment variables or raw arguments. A missing absolute node/node.exe registration may use the same executable name resolved on PATH for this invocation only. Missing plugin scripts are not reconstructed, installed or redirected to a different browser. The owner PC must run the updated probe to determine the remaining missing component. Ego causing the path change remains unproven.
 
 The review inbox now supports selecting multiple submitted results and completing review in one transaction, with displayed-version checks. Stale, running, approval and child tasks are rejected. This does not apply files, publish content or grant runtime permissions.
+
+## v0.20.5: missing bridge executable and visible bulk controls
+
+Owner launch_paths confirms command_file=node_repl.exe and command_exists=false, with no script arguments. This is not the general node/node.exe executable. Do not substitute Node.js, invent a node_repl server or claim a repository update restores this external plugin runtime. The configured executable location and its official host/plugin installation must be repaired on the owner PC. No evidence establishes ego as the direct cause.
+
+Bulk controls are now always visible in the web inbox; failed/blocked attention items have separate batch acknowledgement that retains their failure states. Add equivalent Streamlit controls, asset cache version and disconnected-response handling (do not attempt a second response to an aborted socket).
