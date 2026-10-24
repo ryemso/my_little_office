@@ -238,7 +238,7 @@ def main():
         print('Checking GitHub for an office update...')
         manifest, raw, archive, commit = latest_release()
         changed = apply_release(root, manifest, raw, verified_files(manifest, archive), post_install)
-        print(('Updated to ' if changed else 'Already current: ') + commit[:12])
+        print(('Updated to ' if changed else 'Already current: ') + str(manifest.get('version','unknown')) + ' (' + commit[:12] + ')')
 
 
 if __name__ == '__main__':
