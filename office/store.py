@@ -239,6 +239,21 @@ class Store(Conversations,Decisions,Schedules,Activity):
             updated=con.execute("UPDATE tasks SET status='completed',updated=? WHERE id=? AND status='review'", (time.time(), identifier))
             if updated.rowcount:self._message(con,identifier,'reviewed','owner','status','결과 검토를 완료했습니다.')
 
+    def complete_many(self, items):
+        if not isinstance(items,list) or not 1<=len(items)<=100:raise ValueError('검토할 업무를 1~100개 선택하세요.')
+        if any(not isinstance(item,dict) or not isinstance(item.get('id'),str) or type(item.get('version')) not in (int,float) for item in items):raise ValueError('검토 대상 형식이 잘못됐습니다.')
+        if len({item['id'] for item in items})!=len(items):raise ValueError('중복 검토 대상입니다.')
+        with self.connect() as con:
+            con.execute('BEGIN IMMEDIATE')
+            for item in items:
+                row=con.execute('SELECT * FROM tasks WHERE id=?',(item['id'],)).fetchone()
+                if not row or row['status']!='review' or row['updated']!=item['version'] or row['root_id'] is not None:
+                    raise ValueError('검토 대상 상태가 바뀌었습니다. 목록을 새로고침하세요.')
+            for item in items:
+                con.execute("UPDATE tasks SET status='completed',updated=? WHERE id=?",(time.time(),item['id']))
+                self._message(con,item['id'],'reviewed','owner','status','결과 일괄 검토를 완료했습니다.')
+        return len(items)
+
     def recover(self):
         self.runtime.recover()
         with self.connect() as con:

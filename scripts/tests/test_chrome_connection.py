@@ -130,3 +130,12 @@ class ChromeConnectionTests(unittest.TestCase):
         self.assertEqual(browser_count({'content':[{'text':'The Chrome browser supports browsers=[]'}]}),0)
         self.assertEqual(browser_count({'browsers':[{'name':'Chrome','id':'1','connected':False}]}),0)
         self.assertEqual(browser_count({'structuredContent':{'browsers':[{'name':'Chrome','id':'1','url':'private'}]}}),1)
+
+    def test_registered_missing_launch_paths_are_reported_without_arguments(self):
+        from office.chrome_connection import launch_paths
+        root=Path(self.tmp.name)
+        result=launch_paths({'command':str(root/'gone-node.exe'),'args':[str(root/'missing.mjs'),'--token=private'],'cwd':str(root)})
+        self.assertFalse(result['command_exists'])
+        self.assertEqual(result['scripts'],[{'file':'missing.mjs','exists':False}])
+        self.assertNotIn('private',json.dumps(result))
+        self.assertNotIn(str(root),json.dumps(result))
